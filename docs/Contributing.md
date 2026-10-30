@@ -1,14 +1,14 @@
-# Contributing to AURA
+# Contributing to LivePrep
 
-Thank you for your interest in contributing to **AURA – Your Personal AI Companion**!
+Thank you for your interest in contributing to **LivePrep – Your Personal AI Companion**!
 
-AURA is an advanced Generative AI-powered personal assistant designed to help users learn, communicate, work, and grow through personalized AI interactions.
+LivePrep is an advanced Generative AI-powered personal assistant designed to help users learn, communicate, work, and grow through personalized AI interactions.
 
 We welcome contributions, suggestions, bug reports, feature requests, and improvements.
 
 ## 1. Project Overview
 
-AURA is built around three core modes:
+LivePrep is built around three core modes:
 
 - **Default Mode:** An intelligent personal AI assistant.
 - **Preparation Mode:** An adaptive AI tutor for learning and skill development.
@@ -132,12 +132,12 @@ We believe in:
 
 ## 11. Project Status
 
-AURA is under active development. Features, architecture, and implementation details may evolve as the project progresses.
+LivePrep is under active development. Features, architecture, and implementation details may evolve as the project progresses.
 
 Contributions should align with the project's long-term vision and development roadmap.
 
 ---
 
-**Thank you for helping build AURA – Your Personal AI Companion.**
+**Thank you for helping build LivePrep – Your Personal AI Companion.**
 
 *Build intelligence. Enable growth. Empower people.*

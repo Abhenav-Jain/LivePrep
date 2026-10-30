@@ -1,10 +1,10 @@
-# AURA – Your Personal AI Companion
+# LivePrep – Your Personal AI Companion
 
 An advanced Generative AI-powered virtual companion designed to help users learn, communicate, work, and grow.
 
 ## Overview
 
-AURA combines a Personal AI Assistant, Interactive AI Tutor, and Communication Coach into one intelligent application.
+LivePrep combines a Personal AI Assistant, Interactive AI Tutor, and Communication Coach into one intelligent application.
 
 It features a virtual AI character with voice interaction, personalized memory, multimodal intelligence, and adaptive learning capabilities.
 
