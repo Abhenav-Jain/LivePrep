@@ -1,7 +1,7 @@
 @echo off
-title OmniCopilot Live Launcher
+title LivePrep Multimodal Agent Launcher
 echo ========================================================
-echo       Starting OmniCopilot Live (Backend + Frontend)
+echo       Starting LivePrep (Backend + Frontend)
 echo ========================================================
 echo.
 
@@ -15,20 +15,19 @@ if not exist "%~dp0backend\.venv\Scripts\python.exe" (
 
 :: Start Backend Server
 echo [1/2] Starting Backend FastAPI Server on http://localhost:8000 ...
-start "OmniCopilot Live - Backend" cmd /k "cd /d "%~dp0backend" && .venv\Scripts\python.exe app.py"
+start "LivePrep - Backend" cmd /k "cd /d "%~dp0backend" && .\.venv\Scripts\python.exe app.py"
 
-:: Wait 2 seconds
-timeout /t 2 /nobreak >nul
+:: Wait 2 seconds reliably
+ping 127.0.0.1 -n 3 >nul
 
 :: Start Frontend Server
 echo [2/2] Starting Frontend Vite Dev Server on http://localhost:3000 ...
-start "OmniCopilot Live - Frontend" cmd /k "cd /d "%~dp0frontend" && npm run dev"
+start "LivePrep - Frontend" cmd /k "cd /d "%~dp0frontend" && npm run dev"
 
 echo.
 echo ========================================================
-echo OmniCopilot Live is starting up!
+echo LivePrep is starting up!
 echo Frontend: http://localhost:3000
 echo Backend API & WS: http://localhost:8000
 echo ========================================================
 echo.
-pause
