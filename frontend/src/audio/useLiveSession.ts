@@ -20,6 +20,47 @@ export interface ToolCallItem {
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
+const WORKLET_PROCESSOR_CODE = `
+class PCMRecorderProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.buffer = [];
+    this.targetSampleRate = 16000;
+    this.chunkSize = 1600;
+  }
+  process(inputs) {
+    const input = inputs[0];
+    if (!input || !input[0] || input[0].length === 0) return true;
+    const channelData = input[0];
+    const inputSampleRate = globalThis.sampleRate || 48000;
+    const ratio = inputSampleRate / this.targetSampleRate;
+    let inIndex = 0;
+    while (inIndex < channelData.length) {
+      const idx = Math.floor(inIndex);
+      const nextIdx = Math.min(idx + 1, channelData.length - 1);
+      const fraction = inIndex - idx;
+      const sample = channelData[idx] * (1 - fraction) + channelData[nextIdx] * fraction;
+      const s = Math.max(-1, Math.min(1, sample));
+      const pcm16 = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      this.buffer.push(Math.round(pcm16));
+      inIndex += ratio;
+    }
+    while (this.buffer.length >= this.chunkSize) {
+      const chunk = this.buffer.splice(0, this.chunkSize);
+      const int16Array = new Int16Array(chunk);
+      let sum = 0;
+      for (let i = 0; i < chunk.length; i++) {
+        sum += (chunk[i] / 32768) * (chunk[i] / 32768);
+      }
+      const rms = Math.sqrt(sum / chunk.length);
+      this.port.postMessage({ pcmData: int16Array.buffer, volume: rms }, [int16Array.buffer]);
+    }
+    return true;
+  }
+}
+registerProcessor('pcm-recorder-processor', PCMRecorderProcessor);
+`;
+
 export function useLiveSession() {
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const [statusMessage, setStatusMessage] = useState<string>('Ready to connect');
@@ -102,8 +143,10 @@ export function useLiveSession() {
       const audioCtx = new AudioCtx();
       audioContextRef.current = audioCtx;
 
-      const workletUrl = new URL('./pcm-recorder.worklet.js', import.meta.url).href;
+      const blob = new Blob([WORKLET_PROCESSOR_CODE], { type: 'application/javascript' });
+      const workletUrl = URL.createObjectURL(blob);
       await audioCtx.audioWorklet.addModule(workletUrl);
+      URL.revokeObjectURL(workletUrl);
 
       const source = audioCtx.createMediaStreamSource(stream);
       const workletNode = new AudioWorkletNode(audioCtx, 'pcm-recorder-processor');

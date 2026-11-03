@@ -55,11 +55,10 @@ class GeminiLiveBridge:
                     prefix_padding_ms=20,
                 )
             ),
-            # Sliding Window context compression prevents 10-minute session expiration
+            # Sliding Window context compression prevents session expiration
             context_window_compression=types.ContextWindowCompressionConfig(
                 sliding_window=types.SlidingWindow()
             ),
-            session_resumption=types.SessionResumptionConfig(transparent=True),
             tools=get_gemini_tools(),
         )
 
