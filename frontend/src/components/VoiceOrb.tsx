@@ -47,7 +47,7 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({ state, userVolume, agentVolu
       }
 
       // Outer ambient glow
-      const baseRadius = 80;
+      const baseRadius = 62;
       const pulseRadius = baseRadius + intensity * 40;
       const gradient = ctx.createRadialGradient(
         centerX,
@@ -125,14 +125,14 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({ state, userVolume, agentVolu
   }, [state, userVolume, agentVolume]);
 
   return (
-    <div className="relative flex flex-col items-center justify-center">
+    <div className="relative flex flex-col items-center justify-center my-1">
       <canvas
         ref={canvasRef}
-        width={340}
-        height={340}
-        className="w-[300px] h-[300px] sm:w-[340px] sm:h-[340px] transition-transform duration-300"
+        width={280}
+        height={280}
+        className="w-[180px] h-[180px] sm:w-[240px] sm:h-[240px] transition-transform duration-300"
       />
-      <div className="absolute bottom-2 flex items-center space-x-2 px-3 py-1 rounded-full bg-surface/80 backdrop-blur-md border border-slate-800 text-xs font-mono font-medium tracking-wide">
+      <div className="mt-1 flex items-center space-x-2 px-3 py-1 rounded-full bg-surface/90 backdrop-blur-md border border-slate-800 text-[11px] font-mono font-medium tracking-wide shadow-lg">
         <span
           className={`w-2 h-2 rounded-full ${
             state === 'speaking'

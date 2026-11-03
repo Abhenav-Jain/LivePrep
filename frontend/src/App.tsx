@@ -9,7 +9,6 @@ import {
   Settings as SettingsIcon,
   Send,
   Radio,
-  Cpu,
   Layers,
   ShieldCheck,
   ShieldAlert,
@@ -66,6 +65,10 @@ export const App: React.FC = () => {
     if (status === 'connected' || status === 'connecting') {
       disconnect();
     } else {
+      if (!apiKey) {
+        setIsSettingsOpen(true);
+        return;
+      }
       connect(apiKey, selectedModel);
     }
   };
@@ -81,7 +84,7 @@ export const App: React.FC = () => {
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-background text-slate-100 font-sans selection:bg-primary/30">
       {/* Top Navigation Bar */}
-      <header className="h-14 border-b border-slate-800/80 px-6 flex items-center justify-between bg-surface/40 backdrop-blur-md z-20">
+      <header className="h-14 border-b border-slate-800/80 px-4 sm:px-6 flex items-center justify-between bg-surface/60 backdrop-blur-md z-20 flex-shrink-0">
         <div className="flex items-center space-x-3">
           <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/20">
             <Radio className="w-4 h-4 animate-pulse" />
@@ -89,23 +92,36 @@ export const App: React.FC = () => {
           <div>
             <div className="flex items-center space-x-2">
               <h1 className="text-sm font-extrabold tracking-wider uppercase bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-cyan-400 to-purple-400">
-                OmniCopilot Live
+                LivePrep
               </h1>
               <span className="px-1.5 py-0.5 rounded bg-primary/20 text-primary-glow border border-primary/30 text-[10px] font-mono font-bold">
-                ENTERPRISE
+                GEMINI 3.8 LIVE
               </span>
             </div>
-            <p className="text-[10px] font-mono text-slate-400">
-              Low-Latency Multimodal Voice, Vision & Async Tool Agent
+            <p className="text-[10px] font-mono text-slate-400 hidden sm:block">
+              Multimodal Real-Time AI Companion
             </p>
           </div>
         </div>
 
-        <div className="flex items-center space-x-3 sm:space-x-4">
+        <div className="flex items-center space-x-2 sm:space-x-3">
+          {/* Main Quick Action Header Power Button */}
+          <button
+            onClick={handleToggleConnect}
+            className={`flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl font-bold text-xs transition-all shadow-md ${
+              status === 'connected'
+                ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-600/30'
+                : 'bg-primary hover:bg-blue-600 text-white shadow-primary/30 animate-pulse'
+            }`}
+          >
+            <Power className="w-3.5 h-3.5" />
+            <span>{status === 'connected' ? 'End Call' : 'Start Live Call'}</span>
+          </button>
+
           {/* Echo Shield Toggle */}
           <button
             onClick={toggleEchoShield}
-            className={`hidden sm:flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border text-xs font-mono transition-colors ${
+            className={`hidden md:flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border text-xs font-mono transition-colors ${
               echoShield
                 ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
                 : 'bg-slate-800/60 border-slate-700/60 text-slate-400 hover:bg-slate-800'
@@ -117,7 +133,7 @@ export const App: React.FC = () => {
           </button>
 
           {/* Connection Status Badge */}
-          <div className="flex items-center space-x-2 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-xs font-mono">
+          <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-slate-900 border border-slate-800 text-[11px] font-mono">
             <span
               className={`w-2 h-2 rounded-full ${
                 status === 'connected'
@@ -132,12 +148,6 @@ export const App: React.FC = () => {
             <span className="text-slate-300 capitalize">{status}</span>
           </div>
 
-          {/* Model Pill */}
-          <div className="hidden md:flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-slate-800/60 border border-slate-700/60 text-xs font-mono text-slate-300">
-            <Cpu className="w-3.5 h-3.5 text-primary-glow" />
-            <span>{selectedModel}</span>
-          </div>
-
           {/* Settings Button */}
           <button
             onClick={() => setIsSettingsOpen(true)}
@@ -149,10 +159,10 @@ export const App: React.FC = () => {
         </div>
       </header>
 
-      {/* Main Cockpit Workspace */}
-      <main className="flex-1 flex flex-col lg:flex-row overflow-hidden p-4 gap-4">
+      {/* Main Cockpit Workspace - Scrollable on small screens */}
+      <main className="flex-1 flex flex-col lg:flex-row overflow-y-auto p-3 sm:p-4 gap-4 scrollbar-thin">
         {/* Left Section: Voice Orb, Vision PiP, and Controls */}
-        <section className="flex-[5] flex flex-col rounded-3xl bg-surface/40 border border-slate-800/80 backdrop-blur-xl p-5 relative overflow-hidden justify-between shadow-2xl">
+        <section className="flex-1 lg:max-w-[480px] flex flex-col rounded-3xl bg-surface/50 border border-slate-800/80 backdrop-blur-xl p-4 sm:p-5 relative justify-between shadow-2xl space-y-4">
           {/* Status Message Header */}
           <div className="flex items-center justify-between text-xs font-mono text-slate-400 z-10">
             <span className="flex items-center space-x-2">
@@ -163,14 +173,14 @@ export const App: React.FC = () => {
               {isMicActive && (
                 <span className="flex items-center space-x-1 text-emerald-400 text-[11px]">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>16kHz PCM MIC</span>
+                  <span>16kHz MIC</span>
                 </span>
               )}
             </div>
           </div>
 
           {/* Center Stage: Voice Orb & PiP overlay */}
-          <div className="relative flex-1 flex flex-col items-center justify-center my-4">
+          <div className="relative flex-1 flex flex-col items-center justify-center min-h-[220px]">
             <VoiceOrb
               state={agentState}
               userVolume={userVolume}
@@ -178,7 +188,7 @@ export const App: React.FC = () => {
             />
 
             {/* Live Video Preview overlay */}
-            <div className="absolute top-0 right-0 max-w-[280px] z-10">
+            <div className="absolute top-0 right-0 max-w-[240px] z-10">
               <ScreenPreview
                 stream={videoStream}
                 isActive={isScreenActive || isCameraActive}
@@ -190,62 +200,62 @@ export const App: React.FC = () => {
           </div>
 
           {/* Bottom Dock Control Bar */}
-          <div className="space-y-4 z-10">
+          <div className="space-y-3 z-10 pt-2 border-t border-slate-800/60">
             {/* Action Buttons */}
-            <div className="flex items-center justify-center space-x-3 sm:space-x-4">
-              {/* Power / Connect */}
+            <div className="flex items-center justify-center space-x-2 sm:space-x-3">
+              {/* Power / Connect Button */}
               <button
                 onClick={handleToggleConnect}
-                className={`flex items-center space-x-2 px-5 py-3 rounded-2xl font-semibold text-sm transition-all shadow-lg ${
+                className={`flex items-center space-x-2 px-5 py-2.5 rounded-2xl font-semibold text-xs sm:text-sm transition-all shadow-lg ${
                   status === 'connected'
                     ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-600/30'
                     : 'bg-primary hover:bg-blue-600 text-white shadow-primary/30'
                 }`}
               >
                 <Power className="w-4 h-4" />
-                <span>{status === 'connected' ? 'End Session' : 'Start Live Session'}</span>
+                <span>{status === 'connected' ? 'End Call' : 'Start Live Session'}</span>
               </button>
 
               {/* Mic Toggle */}
               <button
                 onClick={toggleMic}
                 disabled={status !== 'connected'}
-                className={`p-3 rounded-2xl border transition-all ${
+                className={`p-2.5 sm:p-3 rounded-2xl border transition-all ${
                   isMicActive
                     ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/30'
                     : 'bg-slate-800/80 border-slate-700 text-slate-400 hover:text-white'
                 } ${status !== 'connected' ? 'opacity-50 cursor-not-allowed' : ''}`}
                 title={isMicActive ? 'Mute Microphone' : 'Unmute Microphone'}
               >
-                {isMicActive ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
+                {isMicActive ? <Mic className="w-4 h-4 sm:w-5 sm:h-5" /> : <MicOff className="w-4 h-4 sm:w-5 sm:h-5" />}
               </button>
 
               {/* Screen Share Toggle */}
               <button
                 onClick={isScreenActive ? stopScreenShare : startScreenShare}
                 disabled={status !== 'connected'}
-                className={`p-3 rounded-2xl border transition-all ${
+                className={`p-2.5 sm:p-3 rounded-2xl border transition-all ${
                   isScreenActive
                     ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400 hover:bg-cyan-500/30 shadow-lg shadow-cyan-500/20'
                     : 'bg-slate-800/80 border-slate-700 text-slate-400 hover:text-white'
                 } ${status !== 'connected' ? 'opacity-50 cursor-not-allowed' : ''}`}
                 title={isScreenActive ? 'Stop Screen Share' : 'Share Screen with Gemini'}
               >
-                <Monitor className="w-5 h-5" />
+                <Monitor className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
 
               {/* Webcam Toggle */}
               <button
                 onClick={isCameraActive ? stopCamera : startCamera}
                 disabled={status !== 'connected'}
-                className={`p-3 rounded-2xl border transition-all ${
+                className={`p-2.5 sm:p-3 rounded-2xl border transition-all ${
                   isCameraActive
                     ? 'bg-purple-500/20 border-purple-500/50 text-purple-400 hover:bg-purple-500/30'
                     : 'bg-slate-800/80 border-slate-700 text-slate-400 hover:text-white'
                 } ${status !== 'connected' ? 'opacity-50 cursor-not-allowed' : ''}`}
                 title={isCameraActive ? 'Stop Webcam' : 'Turn on Webcam'}
               >
-                {isCameraActive ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
+                {isCameraActive ? <Video className="w-4 h-4 sm:w-5 sm:h-5" /> : <VideoOff className="w-4 h-4 sm:w-5 sm:h-5" />}
               </button>
             </div>
 
@@ -255,43 +265,43 @@ export const App: React.FC = () => {
                 type="text"
                 placeholder={
                   status === 'connected'
-                    ? 'Type a message or speak into your mic...'
-                    : 'Connect session to chat or speak...'
+                    ? 'Type message or speak into mic...'
+                    : 'Click "Start Live Call" above to begin...'
                 }
                 value={inputPrompt}
                 onChange={(e) => setInputPrompt(e.target.value)}
                 disabled={status !== 'connected'}
-                className="w-full pl-4 pr-12 py-3 rounded-2xl bg-slate-900/80 border border-slate-800 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-primary/60 transition-colors disabled:opacity-50"
+                className="w-full pl-4 pr-10 py-2.5 rounded-2xl bg-slate-900/80 border border-slate-800 text-xs sm:text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-primary/60 transition-colors disabled:opacity-50"
               />
               <button
                 type="submit"
                 disabled={status !== 'connected' || !inputPrompt.trim()}
-                className="absolute right-2 p-2 rounded-xl bg-primary text-white hover:bg-blue-600 disabled:opacity-40 transition-opacity"
+                className="absolute right-1.5 p-1.5 rounded-xl bg-primary text-white hover:bg-blue-600 disabled:opacity-40 transition-opacity"
               >
-                <Send className="w-4 h-4" />
+                <Send className="w-3.5 h-3.5" />
               </button>
             </form>
           </div>
         </section>
 
         {/* Right Section: Transcripts & Async Tool Activities */}
-        <section className="flex-[6] flex flex-col gap-4 overflow-hidden">
+        <section className="flex-1 flex flex-col gap-4 min-h-[400px]">
           {/* Real-time Transcription Stream */}
-          <div className="flex-1 overflow-hidden">
+          <div className="flex-1 min-h-[260px] overflow-hidden">
             <TranscriptView
               transcripts={transcripts}
               onSuggestedPromptClick={(prompt) => {
                 if (status === 'connected') {
                   sendTextMessage(prompt);
                 } else {
-                  connect(apiKey, selectedModel);
+                  handleToggleConnect();
                 }
               }}
             />
           </div>
 
           {/* Async Non-Blocking Tool Cards */}
-          <div className="h-64 sm:h-72">
+          <div className="h-56 sm:h-64 flex-shrink-0">
             <ToolActivityCard toolCalls={toolCalls} />
           </div>
         </section>
