@@ -65,10 +65,6 @@ export const App: React.FC = () => {
     if (status === 'connected' || status === 'connecting') {
       disconnect();
     } else {
-      if (!apiKey) {
-        setIsSettingsOpen(true);
-        return;
-      }
       connect(apiKey, selectedModel);
     }
   };
