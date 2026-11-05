@@ -180,10 +180,13 @@ export function useLiveSession() {
           }, 280);
         }
 
-        // Stream audio chunk to backend
+        // Stream audio chunk to backend as binary frame (0x01 type byte + raw PCM)
         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && pcmData) {
-          const b64 = arrayBufferToBase64(pcmData);
-          wsRef.current.send(JSON.stringify({ type: 'audio', data: b64 }));
+          const typeByte = new Uint8Array([0x01]);
+          const combined = new Uint8Array(typeByte.length + pcmData.byteLength);
+          combined.set(typeByte, 0);
+          combined.set(new Uint8Array(pcmData), typeByte.length);
+          wsRef.current.send(combined);
         }
       };
 
@@ -364,7 +367,7 @@ export function useLiveSession() {
   };
 
   // Connect to WebSocket Gateway with resilient state
-  const connect = useCallback((apiKey?: string, model?: string) => {
+  const connect = useCallback((apiKey?: string, model?: string, livePrepToken?: string) => {
     if (wsRef.current) {
       wsRef.current.close();
     }
@@ -375,7 +378,7 @@ export function useLiveSession() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
     const params = new URLSearchParams();
-    if (apiKey) params.set('api_key', apiKey);
+    // API key is now sent via auth message, NOT query string (security fix)
     if (model) params.set('model', model);
 
     const wsUrl = `${protocol}//${host}/ws/live?${params.toString()}`;
@@ -383,12 +386,37 @@ export function useLiveSession() {
     wsRef.current = ws;
 
     ws.onopen = () => {
+      // Send auth message as the first message (required by backend)
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'auth',
+          token: livePrepToken || '',
+          api_key: apiKey || '',
+        }));
+      }
       setStatus('connected');
       setStatusMessage('Connected. Initializing Gemini Live...');
       startMic();
     };
 
     ws.onmessage = (event) => {
+      // Handle binary audio frames (0x01 type byte + raw PCM)
+      if (typeof event.data !== 'string') {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const buffer = reader.result as ArrayBuffer;
+          if (buffer.byteLength < 2) return;
+          const view = new Uint8Array(buffer);
+          const typeByte = view[0];
+          if (typeByte === 0x01) {
+            // Binary audio frame - play directly
+            audioPlayerRef.current?.playChunk(buffer.slice(1));
+          }
+        };
+        reader.readAsArrayBuffer(event.data as Blob);
+        return;
+      }
+
       try {
         const msg = JSON.parse(event.data);
 

@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Key, Cpu, X, Check, ExternalLink } from 'lucide-react';
+import { Settings, Key, Cpu, X, Check, ExternalLink, ShieldCheck } from 'lucide-react';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   apiKey: string;
   onApiKeyChange: (key: string) => void;
+  livePrepToken: string;
+  onLivePrepTokenChange: (token: string) => void;
   selectedModel: string;
   onModelChange: (model: string) => void;
 }
@@ -15,10 +17,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   apiKey,
   onApiKeyChange,
+  livePrepToken,
+  onLivePrepTokenChange,
   selectedModel,
   onModelChange,
 }) => {
   const [localKey, setLocalKey] = useState(apiKey);
+  const [localToken, setLocalToken] = useState(livePrepToken);
   const [localModel, setLocalModel] = useState(selectedModel);
   const [serverHealth, setServerHealth] = useState<{
     status: string;
@@ -29,6 +34,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   useEffect(() => {
     setLocalKey(apiKey);
   }, [apiKey]);
+
+  useEffect(() => {
+    setLocalToken(livePrepToken);
+  }, [livePrepToken]);
 
   useEffect(() => {
     setLocalModel(selectedModel);
@@ -47,6 +56,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleSave = () => {
     onApiKeyChange(localKey.trim());
+    onLivePrepTokenChange(localToken.trim());
     onModelChange(localModel);
     onClose();
   };
@@ -109,6 +119,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             )}
           </div>
 
+
+          {/* LivePrep Auth Token */}
+          <div className="space-y-1.5">
+            <label className="flex items-center justify-between text-xs font-semibold text-slate-300">
+              <span className="flex items-center space-x-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                <span>LivePrep Auth Token</span>
+              </span>
+            </label>
+            <input
+              type="password"
+              placeholder="Enter LIVEPREP_TOKEN (required for WebSocket auth)"
+              value={localToken}
+              onChange={(e) => setLocalToken(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-sm font-mono text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+            />
+            <p className="text-[11px] text-slate-500 font-mono">
+              Set LIVEPREP_TOKEN in backend .env and use the same value here.
+            </p>
+          </div>
           {/* Model Selection */}
           <div className="space-y-1.5">
             <label className="flex items-center space-x-1.5 text-xs font-semibold text-slate-300">

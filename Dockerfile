@@ -29,7 +29,7 @@ COPY backend/ ./backend/
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 # Set environment
-ENV HOST=0.0.0.0
+ENV HOST=127.0.0.1
 ENV PORT=8000
 ENV PROJECT_WORKSPACE_ROOT=/app
 

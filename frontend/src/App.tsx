@@ -47,6 +47,7 @@ export const App: React.FC = () => {
   } = useLiveSession();
 
   const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('omni_gemini_api_key') || '');
+  const [livePrepToken, setLivePrepToken] = useState<string>(() => localStorage.getItem('omni_liveprep_token') || '');
   const [selectedModel, setSelectedModel] = useState<string>(
     () => localStorage.getItem('omni_gemini_model') || 'gemini-3.8-live'
   );
@@ -58,6 +59,10 @@ export const App: React.FC = () => {
   }, [apiKey]);
 
   useEffect(() => {
+    localStorage.setItem('omni_liveprep_token', livePrepToken);
+  }, [livePrepToken]);
+
+  useEffect(() => {
     localStorage.setItem('omni_gemini_model', selectedModel);
   }, [selectedModel]);
 
@@ -65,7 +70,7 @@ export const App: React.FC = () => {
     if (status === 'connected' || status === 'connecting') {
       disconnect();
     } else {
-      connect(apiKey, selectedModel);
+      connect(apiKey, selectedModel, livePrepToken);
     }
   };
 
@@ -309,6 +314,8 @@ export const App: React.FC = () => {
         onClose={() => setIsSettingsOpen(false)}
         apiKey={apiKey}
         onApiKeyChange={setApiKey}
+        livePrepToken={livePrepToken}
+        onLivePrepTokenChange={setLivePrepToken}
         selectedModel={selectedModel}
         onModelChange={setSelectedModel}
       />

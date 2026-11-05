@@ -24,22 +24,17 @@ export class StreamAudioPlayer {
     }
   }
 
-  public playChunk(base64Pcm: string) {
+  public playChunk(pcmData: ArrayBuffer | Uint8Array) {
     if (this.isMuted) return;
 
     this.initContext();
     if (!this.ctx) return;
 
-    // Decode base64 to byte array
-    const binaryString = atob(base64Pcm);
-    const len = binaryString.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
+    // Convert to Uint8Array if needed
+    const bytes = pcmData instanceof Uint8Array ? pcmData : new Uint8Array(pcmData);
 
     // Convert Int16 little-endian to Float32 [-1.0, 1.0]
-    const int16 = new Int16Array(bytes.buffer);
+    const int16 = new Int16Array(bytes.buffer as ArrayBuffer, bytes.byteOffset, bytes.length / 2);
     const numSamples = int16.length;
     if (numSamples === 0) return;
 
