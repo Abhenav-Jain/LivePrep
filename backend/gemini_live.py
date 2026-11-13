@@ -185,7 +185,7 @@ class GeminiLiveBridge:
                     resumption_update = getattr(response, "session_resumption_update", None)
                     if resumption_update and getattr(resumption_update, "new_handle", None):
                         self.resume_handle = resumption_update.new_handle
-                        logger.info(f"Session resumption handle updated: {self.resume_handle}")
+                        logger.info("Session resumption handle updated successfully")
 
                     go_away = getattr(response, "go_away", None)
                     if go_away:

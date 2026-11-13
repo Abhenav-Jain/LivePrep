@@ -357,7 +357,7 @@ export function useLiveSession() {
   };
 
   // Connect to WebSocket Gateway with resilient state
-  const connect = useCallback((apiKey?: string, model?: string, livePrepToken?: string) => {
+  const connect = useCallback((livePrepToken?: string) => {
     if (wsRef.current) {
       wsRef.current.close();
     }
@@ -367,11 +367,7 @@ export function useLiveSession() {
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    const params = new URLSearchParams();
-    // API key is now sent via auth message, NOT query string (security fix)
-    if (model) params.set('model', model);
-
-    const wsUrl = `${protocol}//${host}/ws/live?${params.toString()}`;
+    const wsUrl = `${protocol}//${host}/ws/live`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
@@ -381,7 +377,6 @@ export function useLiveSession() {
         ws.send(JSON.stringify({
           type: 'auth',
           token: livePrepToken || '',
-          api_key: apiKey || '',
         }));
       }
       setStatus('connected');
