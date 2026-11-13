@@ -10,6 +10,12 @@ services:
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - GEMINI_LIVE_MODEL=gemini-3.8-live
-      - HOST=127.0.0.1
+      - HOST=0.0.0.0
       - PORT=8000
+      - DATA_DIR=/app/data
+    volumes:
+      - liveprep-data:/app/data
     restart: unless-stopped
+
+volumes:
+  liveprep-data:

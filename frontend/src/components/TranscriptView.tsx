@@ -8,10 +8,10 @@ interface TranscriptViewProps {
 }
 
 const SUGGESTED_PROMPTS = [
-  "Look at my screen and tell me what you see.",
-  "Run 'dir' in my workspace terminal to see the files.",
+  "Start a mock behavioral interview for a software engineering role.",
+  "Ask me a technical question on system design.",
   "Search the web for the latest Gemini 3.8 features.",
-  "Write a python script that tests prime numbers.",
+  "Evaluate my communication and give me feedback on my last answer.",
 ];
 
 export const TranscriptView: React.FC<TranscriptViewProps> = ({

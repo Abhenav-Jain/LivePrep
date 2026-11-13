@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Terminal, FileCode, Folder, Globe, Cpu, ChevronDown, ChevronUp, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
+import { Globe, FileText, Award, BarChart3, Wrench, ChevronDown, ChevronUp, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
 import { ToolCallItem } from '../audio/useLiveSession';
 
 interface ToolActivityCardProps {
@@ -11,18 +11,16 @@ export const ToolActivityCard: React.FC<ToolActivityCardProps> = ({ toolCalls })
 
   const getToolIcon = (name: string) => {
     switch (name) {
-      case 'execute_command':
-        return <Terminal className="w-4 h-4 text-emerald-400" />;
-      case 'read_file':
-      case 'write_file':
-        return <FileCode className="w-4 h-4 text-blue-400" />;
-      case 'list_directory':
-        return <Folder className="w-4 h-4 text-amber-400" />;
       case 'search_web':
         return <Globe className="w-4 h-4 text-cyan-400" />;
-      case 'get_system_telemetry':
+      case 'save_note':
+        return <FileText className="w-4 h-4 text-blue-400" />;
+      case 'score_answer':
+        return <Award className="w-4 h-4 text-amber-400" />;
+      case 'get_progress':
+        return <BarChart3 className="w-4 h-4 text-purple-400" />;
       default:
-        return <Cpu className="w-4 h-4 text-purple-400" />;
+        return <Wrench className="w-4 h-4 text-emerald-400" />;
     }
   };
 
@@ -35,7 +33,7 @@ export const ToolActivityCard: React.FC<ToolActivityCardProps> = ({ toolCalls })
       <div className="rounded-2xl bg-surface/70 border border-slate-800/80 p-4 text-center text-xs text-slate-400">
         <p className="font-mono">No active tool executions.</p>
         <p className="text-[11px] text-slate-400 mt-0.5">
-          Tools (terminal, code edits, web search) run asynchronously when requested.
+          Tools (web search, notes, answer scoring, progress) run asynchronously when requested.
         </p>
       </div>
     );
@@ -45,9 +43,9 @@ export const ToolActivityCard: React.FC<ToolActivityCardProps> = ({ toolCalls })
     <div className="rounded-2xl bg-surface/70 border border-slate-800/80 backdrop-blur-xl overflow-hidden shadow-xl">
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800/80 bg-slate-900/40">
         <div className="flex items-center space-x-2">
-          <Terminal className="w-4 h-4 text-emerald-400" />
+          <Wrench className="w-4 h-4 text-emerald-400" />
           <h2 className="text-sm font-semibold tracking-wide text-slate-200">
-            Async Non-Blocking Tools
+            Interview Coaching Tools
           </h2>
         </div>
         <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
