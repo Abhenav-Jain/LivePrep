@@ -1,12 +1,12 @@
 import os
 import json
+import secrets
 import asyncio
 import logging
 from pathlib import Path
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from gemini_live import GeminiLiveBridge
 
@@ -18,14 +18,31 @@ logging.basicConfig(
 )
 logger = logging.getLogger("liveprep-app")
 
+# Fail-closed credential validation on startup
+LIVEPREP_TOKEN = os.getenv("LIVEPREP_TOKEN", "")
+if not LIVEPREP_TOKEN or len(LIVEPREP_TOKEN) < 32:
+    raise RuntimeError(
+        "CRITICAL STARTUP ERROR: LIVEPREP_TOKEN is missing or shorter than 32 characters. "
+        "Set a strong random token of at least 32 characters in your environment."
+    )
+
+SERVER_API_KEY = os.getenv("GEMINI_API_KEY", "")
+if not SERVER_API_KEY or SERVER_API_KEY == "your_gemini_api_key_here":
+    raise RuntimeError(
+        "CRITICAL STARTUP ERROR: GEMINI_API_KEY is missing or unconfigured in environment."
+    )
+
+# Allowed origins from env var (comma-separated)
+raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8000")
+ALLOWED_ORIGINS = {orig.strip() for orig in raw_origins.split(",") if orig.strip()}
+
 app = FastAPI(
     title="LivePrep Backend",
     description="Low-Latency Multimodal Voice, Vision, and Tool Agent Backend powered by Gemini Live API",
     version="1.0.0"
 )
 
-# CORS - restricted to local dev origins only
-ALLOWED_ORIGINS = {"http://localhost:3000", "http://localhost:8000"}
+# CORS setup
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(ALLOWED_ORIGINS),
@@ -35,36 +52,28 @@ app.add_middleware(
 )
 
 DEFAULT_MODEL = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.8-live")
-SERVER_API_KEY = os.getenv("GEMINI_API_KEY", "")
-LIVEPREP_TOKEN = os.getenv("LIVEPREP_TOKEN", "")
 
-# Concurrency limit for sessions
-SESSION_SEMAPHORE = asyncio.Semaphore(int(os.getenv("MAX_CONCURRENT_SESSIONS", "5")))
+# Concurrency limit for sessions (default 3)
+SESSION_SEMAPHORE = asyncio.Semaphore(int(os.getenv("MAX_CONCURRENT_SESSIONS", "3")))
 
 
 @app.get("/api/health")
 async def health_check():
-    """Health check endpoint (no sensitive path info leaked)."""
-    return {
-        "status": "healthy",
-        "api_key_configured": bool(SERVER_API_KEY and SERVER_API_KEY != "your_gemini_api_key_here"),
-        "default_model": DEFAULT_MODEL,
-    }
+    """Health check endpoint."""
+    return {"status": "ok"}
 
 
 @app.websocket("/ws/live")
-async def websocket_live_endpoint(
-    websocket: WebSocket,
-    model: str = Query(default="")
-):
+async def websocket_live_endpoint(websocket: WebSocket):
     """
     WebSocket endpoint for real-time audio/video streaming and tool events.
     Requires Origin check and token authentication (first message must be auth).
-    API key is sent via auth message, never via query string.
+    Uses server GEMINI_API_KEY and GEMINI_LIVE_MODEL only.
     """
     # 1. Origin check (browsers do NOT enforce CORS on WebSocket)
     origin = websocket.headers.get("origin")
     if origin not in ALLOWED_ORIGINS:
+        logger.warning(f"Connection rejected: origin '{origin}' not in ALLOWED_ORIGINS")
         await websocket.close(code=1008)
         return
 
@@ -73,7 +82,7 @@ async def websocket_live_endpoint(
         await websocket.accept()
         logger.info("New client connected to /ws/live")
 
-        # 3. First message must be auth: {"type": "auth", "token": "...", "api_key": "..."}
+        # 3. First message must be auth: {"type": "auth", "token": "..."}
         try:
             first_raw = await websocket.receive_text()
             first = json.loads(first_raw)
@@ -81,26 +90,13 @@ async def websocket_live_endpoint(
             await websocket.close(code=1008)
             return
 
-        if first.get("type") != "auth" or first.get("token") != LIVEPREP_TOKEN:
+        client_token = str(first.get("token", ""))
+        if first.get("type") != "auth" or not secrets.compare_digest(client_token, LIVEPREP_TOKEN):
+            logger.warning("Authentication failed: invalid token provided.")
             await websocket.close(code=1008)
             return
 
-        # Effective API key - from client auth message, fallback to server key
-        client_key = first.get("api_key", "")
-        if isinstance(client_key, str):
-            client_key = client_key.strip()
-        effective_key = client_key if client_key else SERVER_API_KEY
-        effective_model = model.strip() if model.strip() else DEFAULT_MODEL
-
-        if not effective_key or effective_key == "your_gemini_api_key_here":
-            await websocket.send_text(json.dumps({
-                "type": "error",
-                "message": "GEMINI_API_KEY is not configured! Provide it via auth message."
-            }))
-            await websocket.close(code=1008)
-            return
-
-        bridge = GeminiLiveBridge(api_key=effective_key, model=effective_model)
+        bridge = GeminiLiveBridge(api_key=SERVER_API_KEY, model=DEFAULT_MODEL)
 
         async def ws_send(data: dict):
             try:

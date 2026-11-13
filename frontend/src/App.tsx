@@ -46,31 +46,25 @@ export const App: React.FC = () => {
     toggleEchoShield,
   } = useLiveSession();
 
-  const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('omni_gemini_api_key') || '');
   const [livePrepToken, setLivePrepToken] = useState<string>(() => localStorage.getItem('omni_liveprep_token') || '');
-  const [selectedModel, setSelectedModel] = useState<string>(
-    () => localStorage.getItem('omni_gemini_model') || 'gemini-3.8-live'
-  );
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [inputPrompt, setInputPrompt] = useState<string>('');
 
+  // Purge deprecated storage keys
   useEffect(() => {
-    localStorage.setItem('omni_gemini_api_key', apiKey);
-  }, [apiKey]);
+    localStorage.removeItem('omni_gemini_api_key');
+    localStorage.removeItem('omni_gemini_model');
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('omni_liveprep_token', livePrepToken);
   }, [livePrepToken]);
 
-  useEffect(() => {
-    localStorage.setItem('omni_gemini_model', selectedModel);
-  }, [selectedModel]);
-
   const handleToggleConnect = () => {
     if (status === 'connected' || status === 'connecting') {
       disconnect();
     } else {
-      connect(apiKey, selectedModel, livePrepToken);
+      connect(livePrepToken);
     }
   };
 
@@ -153,7 +147,7 @@ export const App: React.FC = () => {
           <button
             onClick={() => setIsSettingsOpen(true)}
             className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/60 transition-colors"
-            title="Configure API Key & Model"
+            title="Configure LivePrep Token"
           >
             <SettingsIcon className="w-4 h-4" />
           </button>
@@ -312,12 +306,8 @@ export const App: React.FC = () => {
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
-        apiKey={apiKey}
-        onApiKeyChange={setApiKey}
         livePrepToken={livePrepToken}
         onLivePrepTokenChange={setLivePrepToken}
-        selectedModel={selectedModel}
-        onModelChange={setSelectedModel}
       />
     </div>
   );

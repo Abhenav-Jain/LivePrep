@@ -9,7 +9,10 @@ services:
       - "8000:8000"
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
-      - GEMINI_LIVE_MODEL=gemini-3.8-live
+      - LIVEPREP_TOKEN=${LIVEPREP_TOKEN:-}
+      - GEMINI_LIVE_MODEL=${GEMINI_LIVE_MODEL:-gemini-3.8-live}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:8000}
+      - MAX_CONCURRENT_SESSIONS=${MAX_CONCURRENT_SESSIONS:-3}
       - HOST=0.0.0.0
       - PORT=8000
       - DATA_DIR=/app/data
