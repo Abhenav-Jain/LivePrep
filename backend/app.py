@@ -90,9 +90,12 @@ async def websocket_live_endpoint(websocket: WebSocket):
             await websocket.close(code=1008)
             return
 
-        client_token = str(first.get("token", ""))
-        if first.get("type") != "auth" or not secrets.compare_digest(client_token, LIVEPREP_TOKEN):
-            logger.warning("Authentication failed: invalid token provided.")
+        client_token = str(first.get("token", "")).strip()
+        expected_token = LIVEPREP_TOKEN.strip()
+        if first.get("type") != "auth" or not secrets.compare_digest(client_token, expected_token):
+            logger.warning(
+                f"Authentication failed: token mismatch (client provided {len(client_token)} chars, server expects {len(expected_token)} chars)."
+            )
             await websocket.close(code=1008)
             return
 
