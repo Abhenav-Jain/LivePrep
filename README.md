@@ -1,7 +1,7 @@
-# ⚡ LivePrep – Your Personal Multimodal AI Companion & Voice Agent
+# ⚡ LivePrep – Your Personal AI Mock Interviewer & Voice Coach
 
 > **Powered by Google Gemini 3.8 Live API (`gemini-3.8-live`)**  
-> *An ultra-low latency, bidirectional real-time AI companion that listens to your voice, watches your screen/webcam, speaks with natural human voice, and autonomously executes tools on your workspace in real-time.*
+> *An ultra-low latency, bidirectional real-time AI mock interviewer that conducts voice-based interviews, evaluates answers, tracks candidate progress, and adapts to English, Hindi, and Hinglish in real-time.*
 
 [![Live Demo Ready](https://img.shields.io/badge/Status-Production%20Ready-emerald.svg)](#quick-start-guide)
 [![Model](https://img.shields.io/badge/Gemini%20Live-gemini--3.8--live-blue.svg)](https://ai.google.dev)
@@ -15,9 +15,10 @@
 - 🛡️ **Acoustic Echo Shield (Anti-Self-Interruption)**: Dynamically ducks microphone sensitivity and isolates speaker output while the AI talks, preventing laptop speakers from interrupting the AI mid-sentence.
 - ⚡ **Instant Barge-in (Interruption Handling)**: Speak with deliberate intent while the agent is talking, and the playback buffer flushes instantly.
 - 👁️ **Adaptive Motion Vision**: Smart pixel-differential analysis only transmits frames when the screen changes (saving 80% tokens & bandwidth) with a 6s heartbeat and instant manual snapshot trigger.
-- 🛠️ **Fully Decoupled Non-Blocking Tool Execution**: Background tasks run in worker threads without blocking incoming audio or transcripts, protected by:
-  - 🔒 **Path Traversal Sandboxing**: Restricts all reads and writes strictly to the project workspace.
-  - 🛡️ **Destructive Command Guardrail**: Automatically detects and halts dangerous terminal commands.
+- 🛠️ **Real-Time Interview Coaching Tools**: Dedicated interview tools running asynchronously without blocking conversation:
+  - 🌐 **Web Grounding**: Search for relevant technical documentation, questions, and company contexts.
+  - 📝 **Structured Notes & Memory**: Real-time candidate observation notes saved to persistent SQLite storage.
+  - 📊 **Scoring & Progress Tracking**: Instant answer scoring (0-100) and cumulative progress aggregation.
 - 🔄 **Context Window Compression & Resumption**: Native `SlidingWindow` compression prevents 10-minute session expiration.
 - 🎨 **Futuristic Cockpit UI**:
   - Interactive audio-reactive **Voice Orb** that pulses and shifts color dynamically (Idle, Listening, Thinking, Speaking).
@@ -42,7 +43,7 @@ flowchart TD
     subgraph Backend ["Backend (FastAPI + Async WebSockets)"]
         WS_Gateway["WebSocket Gateway (/ws/live)"]
         Tool_Dispatcher["Decoupled Async Tool Dispatcher"]
-        System_IO["Sandboxed Shell / Workspace IO"]
+        Database_IO["Persistent SQLite Storage (DATA_DIR)"]
         Static_Server["Static Single-Page App Server"]
     end
 
@@ -59,7 +60,7 @@ flowchart TD
     WS_Gateway --> Orb
     WS_Gateway --> Transcript
     Live_Session <-->|Tool Call / Response| Tool_Dispatcher
-    Tool_Dispatcher <--> System_IO
+    Tool_Dispatcher <--> Database_IO
     Static_Server --> Client
 ```
 
@@ -143,11 +144,11 @@ gcloud run deploy liveprep \
 2. **Visual Screen Debugging**:
    - Click the **Screen Share** button (monitor icon) and share your code editor or browser tab.
    - Say: *"Look at my screen, what code is open right now?"* or *"Can you spot any syntax issues in this file?"*
-3. **Autonomous Tool Execution**:
-   - Say: *"Check the files in my current workspace."* -> LivePrep triggers `list_directory`.
-   - Say: *"Create a python script called fibonacci.py that calculates the 50th Fibonacci number, and run it in the terminal."* -> LivePrep writes the file, runs the command, and reads you the result.
+3. **Interview Coaching Tools**:
+   - Ask for practice questions or answer an interview prompt: LivePrep evaluates your answer and calls `score_answer`.
+   - LivePrep records observations using `save_note` and summarizes performance using `get_progress`.
 4. **Live Web Grounding**:
-   - Say: *"Search the web for recent announcements about Google Gemini 3.8."* -> LivePrep executes `search_web` and speaks a concise digest.
+   - Say: *"Search the web for common system design interview questions on distributed caching."* -> LivePrep executes `search_web` and speaks a concise digest.
 
 ---
 
@@ -159,7 +160,7 @@ LivePrep/
 │   ├── .venv/                   # Python virtual environment
 │   ├── app.py                   # FastAPI server & WebSocket live gateway
 │   ├── gemini_live.py           # Gemini 3.8 Live API bidirectional session manager
-│   ├── tools.py                 # Sandboxed async tools (Terminal, FS, Search)
+│   ├── tools.py                 # Interview tools (search_web, save_note, score_answer, get_progress)
 │   ├── requirements.txt         # google-genai, fastapi, uvicorn, websockets, duckduckgo-search
 │   └── .env.example             # Environment configuration template
 ├── frontend/

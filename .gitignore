@@ -11,6 +11,12 @@ backend/env/
 venv/
 env/
 
+# Database & persistent runtime data
+data/
+backend/data/
+*.db
+*.sqlite3
+
 # Environment Variables & Secrets
 .env
 .env.local
