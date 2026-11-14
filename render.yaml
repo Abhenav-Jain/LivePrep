@@ -12,6 +12,8 @@ services:
         sync: false
       - key: ALLOWED_ORIGINS
         sync: false
+      - key: DATABASE_URL
+        sync: false
       - key: MAX_CONCURRENT_SESSIONS
         value: "3"
       - key: PORT

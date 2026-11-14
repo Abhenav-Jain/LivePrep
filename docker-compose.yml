@@ -13,6 +13,7 @@ services:
       - GEMINI_LIVE_MODEL=${GEMINI_LIVE_MODEL:-gemini-3.8-live}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:8000}
       - MAX_CONCURRENT_SESSIONS=${MAX_CONCURRENT_SESSIONS:-3}
+      - DATABASE_URL=${DATABASE_URL:-}
       - HOST=0.0.0.0
       - PORT=8000
       - DATA_DIR=/app/data
