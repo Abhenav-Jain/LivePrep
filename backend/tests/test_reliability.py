@@ -98,6 +98,7 @@ def test_server_busy_path():
     try:
         assert app.SESSION_SEMAPHORE.locked()
         with client.websocket_connect("/ws/live", headers={"origin": "http://localhost:3000"}) as ws:
+            ws.send_json({"type": "auth", "token": app.LIVEPREP_TOKEN})
             data = ws.receive_json()
             assert data["type"] == "error"
             assert "Server is busy" in data["message"]

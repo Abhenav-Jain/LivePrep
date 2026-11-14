@@ -57,6 +57,9 @@ DEFAULT_MODEL = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.8-live")
 MAX_CONCURRENT_SESSIONS = int(os.getenv("MAX_CONCURRENT_SESSIONS", "3"))
 SESSION_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_SESSIONS)
 
+# Authentication timeout for WebSocket initial auth message (seconds)
+AUTH_TIMEOUT_SECONDS = float(os.getenv("AUTH_TIMEOUT_SECONDS", "10"))
+
 
 @app.get("/api/health")
 async def health_check():
@@ -68,7 +71,7 @@ async def health_check():
 async def websocket_live_endpoint(websocket: WebSocket):
     """
     WebSocket endpoint for real-time audio/video streaming and tool events.
-    Requires Origin check and token authentication (first message must be auth).
+    Requires Origin check and token authentication (first message must be auth within timeout).
     Uses server GEMINI_API_KEY and GEMINI_LIVE_MODEL only.
     """
     # 1. Origin check (browsers do NOT enforce CORS on WebSocket)
@@ -82,7 +85,29 @@ async def websocket_live_endpoint(websocket: WebSocket):
     await websocket.accept()
     logger.info("New client connected to /ws/live")
 
-    # 3. Check server capacity without hanging
+    # 3. Wait for the first message with timeout (asyncio.wait_for).
+    # On timeout, invalid JSON, wrong message type, or token mismatch: close with code 1008 without touching semaphore.
+    try:
+        auth_timeout = float(os.getenv("AUTH_TIMEOUT_SECONDS", str(AUTH_TIMEOUT_SECONDS)))
+        first_raw = await asyncio.wait_for(websocket.receive_text(), timeout=auth_timeout)
+        first = json.loads(first_raw)
+    except (asyncio.TimeoutError, TimeoutError):
+        logger.warning("Authentication failed")
+        await websocket.close(code=1008)
+        return
+    except Exception:
+        logger.warning("Authentication failed")
+        await websocket.close(code=1008)
+        return
+
+    client_token = str(first.get("token", "")).strip()
+    expected_token = LIVEPREP_TOKEN.strip()
+    if first.get("type") != "auth" or not secrets.compare_digest(client_token, expected_token):
+        logger.warning("Authentication failed")
+        await websocket.close(code=1008)
+        return
+
+    # 4. Only after successful authentication: check server capacity
     if SESSION_SEMAPHORE.locked():
         logger.warning("Server is busy (semaphore locked). Rejecting client with 1013.")
         try:
@@ -95,25 +120,8 @@ async def websocket_live_endpoint(websocket: WebSocket):
             pass
         return
 
-    # 4. Acquire semaphore and run session
+    # 5. Acquire semaphore and run session
     async with SESSION_SEMAPHORE:
-        # First message must be auth: {"type": "auth", "token": "..."}
-        try:
-            first_raw = await websocket.receive_text()
-            first = json.loads(first_raw)
-        except Exception:
-            await websocket.close(code=1008)
-            return
-
-        client_token = str(first.get("token", "")).strip()
-        expected_token = LIVEPREP_TOKEN.strip()
-        if first.get("type") != "auth" or not secrets.compare_digest(client_token, expected_token):
-            logger.warning(
-                f"Authentication failed: token mismatch (client provided {len(client_token)} chars, server expects {len(expected_token)} chars)."
-            )
-            await websocket.close(code=1008)
-            return
-
         bridge = GeminiLiveBridge(api_key=SERVER_API_KEY, model=DEFAULT_MODEL)
 
         async def ws_send(data: dict):
