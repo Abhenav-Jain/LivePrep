@@ -33,3 +33,13 @@
 
 - **Needs human check**:
   - Simulate network drop during an active voice session to verify seamless user reconnect in browser.
+
+## Fix: Authenticate Client Before Acquiring Session Semaphore
+- **Status**: Completed
+- **Branch**: `fix-auth-before-semaphore`
+- **Files Changed**:
+  - `backend/app.py`: Reordered WebSocket lifecycle: (1) check origin, (2) `await websocket.accept()`, (3) await first message with configurable timeout (`AUTH_TIMEOUT_SECONDS`, default 10s) using `asyncio.wait_for`. On timeout, invalid JSON, wrong message type, or token mismatch, logs `"Authentication failed"` and closes with code `1008` without touching `SESSION_SEMAPHORE`. (4) Only after successful authentication checks `SESSION_SEMAPHORE.locked()`, rejecting with code `1013` and busy message if full, otherwise acquires semaphore and runs session.
+  - `backend/.env.example`: Added `AUTH_TIMEOUT_SECONDS=10`.
+  - `backend/tests/test_auth_semaphore.py` & `backend/tests/test_reliability.py`: Added tests verifying auth timeout closing 1008 without locking semaphore, unauthenticated floods not blocking authenticated clients, authenticated busy 1013 path, and log privacy (no token lengths or values).
+- **Verification Results**:
+  - All 16 pytest tests in `backend/tests/` passed.
