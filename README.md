@@ -114,6 +114,32 @@ docker compose up --build
 
 ---
 
+## 🗄️ Database & Migrations (PostgreSQL / Supabase)
+
+LivePrep uses PostgreSQL (Supabase) with SQLAlchemy 2 async (`asyncpg`) and Alembic for schema migrations.
+
+### Running Migrations
+To apply database migrations to your database:
+```bash
+cd backend
+alembic upgrade head
+```
+
+### Creating New Migrations
+When adding or updating SQLAlchemy models in `backend/models.py`:
+```bash
+cd backend
+alembic revision --autogenerate -m "describe schema change"
+alembic upgrade head
+```
+
+### Row Level Security (RLS)
+RLS is enabled by default on all tables (`profiles`, `sessions`, `turns`) with a deny-by-default posture.
+- Direct database access from client browsers / Supabase client SDKs is blocked from reading or writing unauthorized rows.
+- The LivePrep backend application connects via server-side connection (`DATABASE_URL`), and every database repository query explicitly enforces and filters by `user_id`.
+
+---
+
 ## 🌐 Cloud Deployment
 
 LivePrep is containerized and ready for zero-downtime deployment:
