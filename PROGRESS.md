@@ -6,26 +6,30 @@
 
 ## Step 2: Deployment Config and Secrets
 - **Status**: Completed
-- **Branch**: `step2-deployment-config-and-secrets`
+- **Branch**: `step2-deployment-config-and-secrets` (Merged into `main`)
+
+## Step 3: Reliability Fixes in backend/gemini_live.py and backend/app.py
+- **Status**: Completed
+- **Branch**: `step3-reliability-fixes`
 - **Files Changed**:
-  - `backend/app.py`: Read `ALLOWED_ORIGINS` from environment variable (default: `http://localhost:3000,http://localhost:8000`). Used it for both CORS and WebSocket origin verification. Added startup fail-closed validation for `LIVEPREP_TOKEN` (missing or < 32 chars) and `GEMINI_API_KEY`. Replaced token string comparison with `secrets.compare_digest`. Removed client-supplied API key handling and fallback logic; always uses server `GEMINI_API_KEY` and `GEMINI_LIVE_MODEL`. Updated `/api/health` to return `{"status": "ok"}`.
-  - `backend/gemini_live.py`: Removed resume handle value logging.
-  - `frontend/src/App.tsx`: Removed `apiKey` state, `selectedModel` state, and their localStorage storage. Added purge on mount for deprecated `omni_gemini_api_key` and `omni_gemini_model` localStorage keys.
-  - `frontend/src/audio/useLiveSession.ts`: Removed `apiKey` and `model` arguments from `connect()`, removed `api_key` from auth message payload, and removed `model` query param from WebSocket URL.
-  - `frontend/src/components/SettingsModal.tsx`: Removed Gemini API key input and Gemini Live model selector. Retained only the `LIVEPREP_TOKEN` configuration.
-  - `render.yaml`: Added `ALLOWED_ORIGINS` (sync: false), `LIVEPREP_TOKEN` (sync: false), `GEMINI_API_KEY` (sync: false), `GEMINI_LIVE_MODEL` (sync: false), `MAX_CONCURRENT_SESSIONS` (value: "3"), and `PORT` (value: 8000).
-  - `docker-compose.yml`: Added `ALLOWED_ORIGINS`, `LIVEPREP_TOKEN`, `GEMINI_API_KEY`, `GEMINI_LIVE_MODEL`, `MAX_CONCURRENT_SESSIONS` (default: 3).
-  - `backend/.env.example`: Added `ALLOWED_ORIGINS`, `MAX_CONCURRENT_SESSIONS=3`, updated `LIVEPREP_TOKEN` note (min 32 chars).
-  - `backend/tests/test_app.py`: Added automated test suite for `/api/health`, WebSocket origin rejection, and authentication token validation.
+  - `backend/gemini_live.py`:
+    - Fixed task exception handling after `asyncio.wait(..., FIRST_COMPLETED)`: pending tasks are cancelled and awaited, then done tasks have `.exception()` retrieved and re-raised to trigger session reconnection. If `send_task` finished cleanly without exceptions (client disconnected), `_session_closed=True` is set and reconnect is skipped.
+    - Defined `GoAwayReconnect(Exception)` raised when Gemini Live API sends a `go_away` signal. Caught in `run_session()` to reconnect immediately with the preserved `resume_handle` without penalizing the failed attempt counter.
+    - Reset the reconnect attempts counter to 0 whenever a session connection stays healthy for 30+ seconds.
+    - Added input boundaries in `_client_to_gemini`: drops binary frames >64KB, drops JSON messages >1MB, drops base64 audio >64KB, and ignores unknown message types.
+    - Added session limits: max duration (`MAX_SESSION_MINUTES`, default 20 min) and user audio idle timeout (`IDLE_TIMEOUT_SECONDS`, default 120s based on PCM 16kHz audio RMS energy exceeding silence threshold), notifying the client and ending gracefully on timeout.
+  - `backend/app.py`:
+    - Resolved concurrency hang: calls `await websocket.accept()` first. If `SESSION_SEMAPHORE.locked()`, sends `{"type":"error","message":"Server is busy, please try again in a few minutes."}` and cleanly closes with code `1013`. Otherwise executes inside the semaphore.
+  - `Dockerfile`:
+    - Added `--ws-max-size 1048576` (1MB) to uvicorn command.
+  - `backend/.env.example`:
+    - Documented `MAX_SESSION_MINUTES=20` and `IDLE_TIMEOUT_SECONDS=120`.
+  - `backend/tests/test_reliability.py`:
+    - Added unit tests for: reconnect after exception, go_away reconnect using resume_handle, server busy path (code 1013), and oversized input limits.
 
 - **Verification Results**:
-  - Refuses to start without token or with token < 32 chars: Verified (`RuntimeError` on startup).
-  - Refuses to start without GEMINI_API_KEY: Verified (`RuntimeError` on startup).
-  - Frontend contains no active `apiKey` or `omni_gemini_api_key` logic: Verified (only explicit `localStorage.removeItem('omni_gemini_api_key')` cleanup present).
-  - Health endpoint: `GET /api/health` returns `{"status": "ok"}`.
-  - WebSocket connection security: Verified that requests with unauthorized Origin headers fail with code 1008, and invalid auth tokens fail authentication.
-  - Tests: All 8 unit tests in `backend/tests/` passed (`pytest`).
-  - Frontend build: `npm run build` completed successfully.
+  - All 12 pytest unit tests in `backend/tests/` passed cleanly (`test_app.py`, `test_reliability.py`, `test_tools.py`).
+  - Frontend `npm run build` passed cleanly with no TypeScript or bundling errors.
 
 - **Needs human check**:
-  - Deploy to Render and verify connection from the deployed frontend origin with `LIVEPREP_TOKEN`.
+  - Simulate network drop during an active voice session to verify seamless user reconnect in browser.

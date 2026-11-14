@@ -54,7 +54,8 @@ app.add_middleware(
 DEFAULT_MODEL = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.8-live")
 
 # Concurrency limit for sessions (default 3)
-SESSION_SEMAPHORE = asyncio.Semaphore(int(os.getenv("MAX_CONCURRENT_SESSIONS", "3")))
+MAX_CONCURRENT_SESSIONS = int(os.getenv("MAX_CONCURRENT_SESSIONS", "3"))
+SESSION_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_SESSIONS)
 
 
 @app.get("/api/health")
@@ -77,12 +78,26 @@ async def websocket_live_endpoint(websocket: WebSocket):
         await websocket.close(code=1008)
         return
 
-    # 2. Concurrency limit
-    async with SESSION_SEMAPHORE:
-        await websocket.accept()
-        logger.info("New client connected to /ws/live")
+    # 2. Accept connection first so we can respond cleanly
+    await websocket.accept()
+    logger.info("New client connected to /ws/live")
 
-        # 3. First message must be auth: {"type": "auth", "token": "..."}
+    # 3. Check server capacity without hanging
+    if SESSION_SEMAPHORE.locked():
+        logger.warning("Server is busy (semaphore locked). Rejecting client with 1013.")
+        try:
+            await websocket.send_text(json.dumps({
+                "type": "error",
+                "message": "Server is busy, please try again in a few minutes."
+            }))
+            await websocket.close(code=1013)
+        except Exception:
+            pass
+        return
+
+    # 4. Acquire semaphore and run session
+    async with SESSION_SEMAPHORE:
+        # First message must be auth: {"type": "auth", "token": "..."}
         try:
             first_raw = await websocket.receive_text()
             first = json.loads(first_raw)
