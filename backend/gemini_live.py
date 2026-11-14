@@ -1,8 +1,11 @@
-import asyncio
+import os
+import time
 import base64
 import binascii
 import json
 import logging
+import struct
+import asyncio
 from typing import Callable, Optional
 from google import genai
 from google.genai import types
@@ -30,6 +33,27 @@ Key Behavioral Principles:
 """.strip()
 
 
+class GoAwayReconnect(Exception):
+    """Raised when Gemini Live API signals go_away so the session reconnects with resume_handle."""
+    pass
+
+
+def _calculate_audio_rms(data: bytes) -> float:
+    """Calculates RMS (Root Mean Square) energy of 16-bit PCM audio samples."""
+    if len(data) < 2:
+        return 0.0
+    try:
+        import audioop
+        return float(audioop.rms(data, 2))
+    except Exception:
+        count = len(data) // 2
+        if count == 0:
+            return 0.0
+        samples = struct.unpack(f"<{count}h", data[: count * 2])
+        sum_sq = sum(s * s for s in samples)
+        return (sum_sq / count) ** 0.5
+
+
 class GeminiLiveBridge:
     def __init__(self, api_key: str, model: str = "gemini-3.8-live"):
         self.api_key = api_key
@@ -39,23 +63,57 @@ class GeminiLiveBridge:
         self.resume_handle: Optional[str] = None
         self._session_closed = False
 
+        # Session limits and timeouts
+        self.max_session_minutes = float(os.getenv("MAX_SESSION_MINUTES", "20"))
+        self.idle_timeout_seconds = float(os.getenv("IDLE_TIMEOUT_SECONDS", "120"))
+        # Voice activity threshold: RMS > 150 considers the audio non-silent
+        self.silence_rms_threshold = float(os.getenv("AUDIO_SILENCE_RMS_THRESHOLD", "150"))
+
     async def run_session(self, ws_send: Callable[[dict], asyncio.Future], ws_receive: Callable[[], asyncio.Future]):
         """Bridges the frontend client WebSocket with the Gemini Live API session."""
         reconnect_attempts = 0
         max_reconnects = 5
 
         while reconnect_attempts < max_reconnects and not self._session_closed:
+            session_start_time = time.monotonic()
             try:
                 await self._run_single_session(ws_send, ws_receive)
+                # Normal completion (e.g. client disconnected or session timed out)
                 break
+            except GoAwayReconnect:
+                # Immediate reconnection using stored resume_handle without counting as failure
+                logger.info("Handling GoAwayReconnect: reconnecting immediately using resume_handle.")
+                await ws_send({
+                    "type": "session_status",
+                    "status": "reconnecting",
+                    "message": "Server requested reconnect",
+                })
+                await asyncio.sleep(0.5)
+                continue
             except Exception as e:
+                if self._session_closed:
+                    break
+
+                # Reset attempts counter if connection stayed healthy for 30+ seconds before failing
+                if (time.monotonic() - session_start_time) >= 30.0:
+                    logger.info("Session was healthy for >=30s. Resetting reconnect attempts counter.")
+                    reconnect_attempts = 0
+
                 reconnect_attempts += 1
                 logger.error(f"Session error (attempt {reconnect_attempts}/{max_reconnects}): {e}")
                 if reconnect_attempts < max_reconnects:
-                    await ws_send({"type": "session_status", "status": "reconnecting", "attempt": reconnect_attempts})
+                    await ws_send({
+                        "type": "session_status",
+                        "status": "reconnecting",
+                        "attempt": reconnect_attempts,
+                    })
                     await asyncio.sleep(2)
                 else:
-                    await ws_send({"type": "session_status", "status": "disconnected", "message": "Session ended."})
+                    await ws_send({
+                        "type": "session_status",
+                        "status": "disconnected",
+                        "message": "Session ended after max reconnect attempts.",
+                    })
                     raise
 
     async def _run_single_session(self, ws_send, ws_receive):
@@ -86,14 +144,18 @@ class GeminiLiveBridge:
         async with self.client.aio.live.connect(model=self.model, config=config) as session:
             await ws_send({"type": "session_status", "status": "connected", "message": "Live Session Active!"})
 
-            send_task = asyncio.create_task(self._client_to_gemini(session, ws_receive))
+            last_audio_activity = [time.monotonic()]
+
+            send_task = asyncio.create_task(self._client_to_gemini(session, ws_receive, last_audio_activity))
             receive_task = asyncio.create_task(self._gemini_to_client(session, ws_send))
+            timer_task = asyncio.create_task(self._monitor_session_timeouts(ws_send, last_audio_activity))
 
             done, pending = await asyncio.wait(
-                [send_task, receive_task],
+                [send_task, receive_task, timer_task],
                 return_when=asyncio.FIRST_COMPLETED,
             )
 
+            # Cancel and await all pending tasks
             for task in pending:
                 task.cancel()
                 try:
@@ -103,49 +165,127 @@ class GeminiLiveBridge:
                 except Exception as e:
                     logger.warning(f"Error cancelling task: {e}")
 
+            # Cancel active background tool executions
             for call_id, task in list(self.active_tool_tasks.items()):
                 task.cancel()
                 self.active_tool_tasks.pop(call_id, None)
 
-    async def _client_to_gemini(self, session, ws_receive):
+            # Check if send_task completed normally (client disconnected)
+            if send_task in done:
+                send_exc = send_task.exception()
+                if send_exc is None:
+                    # Client cleanly closed connection / disconnected
+                    logger.info("Client disconnected normally; setting _session_closed=True.")
+                    self._session_closed = True
+                    return
+
+            # For each completed task, retrieve and re-raise any exception to trigger retry
+            for task in done:
+                exc = task.exception()
+                if exc:
+                    raise exc
+
+    async def _monitor_session_timeouts(self, ws_send, last_audio_activity: list):
+        """Monitors max session duration and idle timeout based on user audio activity."""
+        session_start = time.monotonic()
+        max_duration_seconds = self.max_session_minutes * 60.0
+
+        while True:
+            await asyncio.sleep(2.0)
+            now = time.monotonic()
+
+            # 1. Max session duration check
+            if (now - session_start) >= max_duration_seconds:
+                logger.info(f"Max session duration ({self.max_session_minutes} min) reached.")
+                await ws_send({
+                    "type": "session_status",
+                    "status": "ended",
+                    "message": f"Session reached maximum duration ({int(self.max_session_minutes)} minutes).",
+                })
+                self._session_closed = True
+                return
+
+            # 2. Idle timeout check
+            if (now - last_audio_activity[0]) >= self.idle_timeout_seconds:
+                logger.info(f"User idle timeout ({self.idle_timeout_seconds}s) reached.")
+                await ws_send({
+                    "type": "session_status",
+                    "status": "ended",
+                    "message": f"Session closed due to inactivity ({int(self.idle_timeout_seconds)}s idle).",
+                })
+                self._session_closed = True
+                return
+
+    async def _client_to_gemini(self, session, ws_receive, last_audio_activity: list):
         """Streams audio, video frames, and text from the client to Gemini."""
+        MAX_BINARY_FRAME_SIZE = 64 * 1024       # 64 KB
+        MAX_JSON_MESSAGE_SIZE = 1024 * 1024     # 1 MB
+        ALLOWED_MESSAGE_TYPES = {"auth", "audio", "video", "text", "audio_stream_end"}
+
         while True:
             try:
                 raw_msg = await ws_receive()
                 if raw_msg is None:
                     break
 
-                # Binary frame: 1 byte type prefix + raw payload
-                # 0x01 = audio (PCM 16kHz), 0x02 = video (JPEG)
+                # Binary frame limit (max 64KB)
                 if isinstance(raw_msg, bytes):
+                    if len(raw_msg) > MAX_BINARY_FRAME_SIZE:
+                        logger.warning(f"Binary frame exceeds limit ({len(raw_msg)} bytes > {MAX_BINARY_FRAME_SIZE}). Dropping.")
+                        continue
                     if len(raw_msg) < 2:
                         continue
+
                     type_byte = raw_msg[0]
                     payload = raw_msg[1:]
-                    if type_byte == 0x01:
+
+                    if type_byte == 0x01:  # Audio PCM 16kHz
+                        # Check audio energy for activity tracking
+                        rms = _calculate_audio_rms(payload)
+                        if rms >= self.silence_rms_threshold:
+                            last_audio_activity[0] = time.monotonic()
+
                         await session.send_realtime_input(
                             audio=types.Blob(data=payload, mime_type="audio/pcm;rate=16000")
                         )
-                    elif type_byte == 0x02:
+                    elif type_byte == 0x02:  # Video JPEG
                         await session.send_realtime_input(
                             video=types.Blob(data=payload, mime_type="image/jpeg")
                         )
+                    else:
+                        logger.warning(f"Unknown binary frame type byte: {type_byte}")
                     continue
 
+                # JSON text limit (max 1MB)
                 if isinstance(raw_msg, str):
+                    if len(raw_msg.encode("utf-8")) > MAX_JSON_MESSAGE_SIZE:
+                        logger.warning("JSON message exceeds 1MB limit. Dropping.")
+                        continue
                     msg = json.loads(raw_msg)
                 elif isinstance(raw_msg, dict):
                     msg = raw_msg
                 else:
+                    logger.warning(f"Unsupported message container: {type(raw_msg)}")
                     continue
 
                 msg_type = msg.get("type")
+                if msg_type not in ALLOWED_MESSAGE_TYPES:
+                    logger.warning(f"Ignoring unknown message type: {msg_type}")
+                    continue
 
                 if msg_type == "auth":
                     continue
 
                 if msg_type == "audio":
                     audio_bytes = base64.b64decode(msg["data"])
+                    if len(audio_bytes) > MAX_BINARY_FRAME_SIZE:
+                        logger.warning("Base64 audio exceeds 64KB. Dropping.")
+                        continue
+
+                    rms = _calculate_audio_rms(audio_bytes)
+                    if rms >= self.silence_rms_threshold:
+                        last_audio_activity[0] = time.monotonic()
+
                     await session.send_realtime_input(
                         audio=types.Blob(data=audio_bytes, mime_type="audio/pcm;rate=16000")
                     )
@@ -159,6 +299,7 @@ class GeminiLiveBridge:
                 elif msg_type == "text":
                     text = msg.get("text", "")
                     if text:
+                        last_audio_activity[0] = time.monotonic()
                         await session.send_realtime_input(text=text)
 
                 elif msg_type == "audio_stream_end":
@@ -189,9 +330,8 @@ class GeminiLiveBridge:
 
                     go_away = getattr(response, "go_away", None)
                     if go_away:
-                        logger.info("Received go_away from Gemini, session will reconnect")
-                        await ws_send({"type": "session_status", "status": "go_away", "message": "Server requested reconnect"})
-                        break
+                        logger.info("Received go_away from Gemini; raising GoAwayReconnect.")
+                        raise GoAwayReconnect("Gemini server requested session go_away reconnect.")
 
                     tool_cancellation = getattr(response, "tool_call_cancellation", None)
                     if tool_cancellation:
@@ -238,6 +378,8 @@ class GeminiLiveBridge:
 
             except asyncio.CancelledError:
                 break
+            except GoAwayReconnect:
+                raise
             except Exception as e:
                 logger.error(f"Error in Gemini receive loop: {e}", exc_info=True)
                 raise
