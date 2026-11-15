@@ -1,14 +1,22 @@
 import os
+import re
 import json
 import secrets
 import asyncio
 import logging
+from enum import Enum
 from pathlib import Path
+from typing import Optional
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy.ext.asyncio import AsyncSession
 from gemini_live import GeminiLiveBridge
+from auth import current_user, AuthenticatedUser
+from db import AsyncSessionLocal, get_db_session
+from repositories import get_profile, upsert_profile
 
 load_dotenv()
 

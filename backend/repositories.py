@@ -1,5 +1,5 @@
 import uuid
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from models import Session, Turn, Profile
@@ -89,7 +89,6 @@ async def get_turns(
     session_id: uuid.UUID
 ) -> List[Turn]:
     """Retrieves turns for a session strictly owned by user_id, ordered by turn index."""
-    # Verify session ownership first
     sess = await get_session(db, user_id=user_id, session_id=session_id)
     if sess is None:
         return []
@@ -101,3 +100,40 @@ async def get_turns(
     )
     res = await db.execute(stmt)
     return list(res.scalars().all())
+
+
+async def get_profile(
+    db: AsyncSession,
+    user_id: uuid.UUID
+) -> Optional[Profile]:
+    """Retrieves the profile for a user strictly by user_id."""
+    stmt = select(Profile).where(Profile.user_id == user_id)
+    res = await db.execute(stmt)
+    return res.scalar_one_or_none()
+
+
+async def upsert_profile(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    data: Dict[str, Any]
+) -> Profile:
+    """Creates or updates a user profile, strictly keying on user_id."""
+    profile = await get_profile(db, user_id)
+    if profile is None:
+        profile = Profile(
+            user_id=user_id,
+            display_name=data.get("display_name"),
+            goal=data.get("goal"),
+            target_role=data.get("target_role"),
+            level=data.get("level"),
+            native_language=data.get("native_language"),
+            correction_style=data.get("correction_style"),
+        )
+        db.add(profile)
+    else:
+        for field in ("display_name", "goal", "target_role", "level", "native_language", "correction_style"):
+            if field in data:
+                setattr(profile, field, data[field])
+
+    await db.flush()
+    return profile
