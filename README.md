@@ -140,6 +140,34 @@ RLS is enabled by default on all tables (`profiles`, `sessions`, `turns`) with a
 
 ---
 
+## 🔐 Authentication (Supabase)
+
+Users sign in with Supabase Auth. The browser receives a short-lived **access token (JWT)** and sends it to the backend as `Authorization: Bearer <token>`.
+
+How the backend checks it (`backend/auth.py`):
+
+1. The token header is read first. Only **ES256** and **RS256** are accepted. `none` and every `HS*` algorithm are rejected before any key is looked up (algorithm-confusion protection).
+2. The signature is verified with the project's **public** keys from `SUPABASE_URL/auth/v1/.well-known/jwks.json`. No secret is stored on our server. Keys are cached for 1 hour; an unknown key id triggers at most one refresh per minute.
+3. `exp`, `iat`, `sub`, `aud` (default `authenticated`) and `iss` (`SUPABASE_URL/auth/v1`) are required and checked. `sub` must be a UUID. This is the user id used to filter every database query.
+4. Any failure returns a generic `401`. If the key endpoint cannot be reached, the answer is `503`. Tokens are never logged.
+
+Endpoints: `GET /api/me`, `PUT /api/me/profile`.
+
+**Before you run it**
+- Set `SUPABASE_URL` (the server refuses to start without it).
+- Open `<SUPABASE_URL>/auth/v1/.well-known/jwks.json` in a browser. It must list at least one key. If it shows `{"keys":[]}`, the project still uses the legacy HS256 secret: in the Supabase dashboard go to *Project Settings > JWT Keys* and migrate to an asymmetric (ES256) signing key. Until then the API answers `503`.
+
+**When the signing key is rotated**
+Supabase publishes old and new keys together during a rotation. The backend picks the right key by `kid`, so no restart is needed. Tokens signed by a revoked key stop working once it disappears from the key set (cache: up to 1 hour).
+
+**Run the tests**
+```bash
+cd backend
+pip install -r requirements-dev.txt
+python -m pytest -q
+```
+Tests use throw-away keys and an in-memory database. They never read your real `.env`, database or Supabase project.
+
 ## 🌐 Cloud Deployment
 
 LivePrep is containerized and ready for zero-downtime deployment:

@@ -3,12 +3,20 @@ import json
 import secrets
 import asyncio
 import logging
+import unicodedata
+from enum import Enum
 from pathlib import Path
+from typing import AsyncGenerator, Optional
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy.ext.asyncio import AsyncSession
 from gemini_live import GeminiLiveBridge
+from auth import current_user, AuthenticatedUser
+from db import AsyncSessionLocal
+from repositories import get_profile, upsert_profile
 
 load_dotenv()
 
@@ -30,6 +38,13 @@ SERVER_API_KEY = os.getenv("GEMINI_API_KEY", "")
 if not SERVER_API_KEY or SERVER_API_KEY == "your_gemini_api_key_here":
     raise RuntimeError(
         "CRITICAL STARTUP ERROR: GEMINI_API_KEY is missing or unconfigured in environment."
+    )
+
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
+if not SUPABASE_URL.startswith(("https://", "http://")):
+    raise RuntimeError(
+        "CRITICAL STARTUP ERROR: SUPABASE_URL is missing or invalid "
+        "(expected https://<project-ref>.supabase.co)."
     )
 
 # Allowed origins from env var (comma-separated)
@@ -65,6 +80,124 @@ AUTH_TIMEOUT_SECONDS = float(os.getenv("AUTH_TIMEOUT_SECONDS", "10"))
 async def health_check():
     """Health check endpoint."""
     return {"status": "ok"}
+
+
+# --------------------------------------------------------------------------- #
+# Database dependency
+# --------------------------------------------------------------------------- #
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """One DB session per request. 503 if DATABASE_URL is not configured."""
+    if AsyncSessionLocal is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database is not configured",
+        )
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise
+
+
+# --------------------------------------------------------------------------- #
+# Profile models (strict validation: this text later goes into AI prompts)
+# --------------------------------------------------------------------------- #
+class Goal(str, Enum):
+    job_interview = "job_interview"
+    campus_placement = "campus_placement"
+    ielts_speaking = "ielts_speaking"
+    general_english = "general_english"
+
+
+class Level(str, Enum):
+    beginner = "beginner"
+    intermediate = "intermediate"
+    advanced = "advanced"
+
+
+class CorrectionStyle(str, Enum):
+    live = "live"
+    end_of_session = "end_of_session"
+
+
+def _clean_single_line(value):
+    """Trim; reject control/format characters (newlines, zero-width, bidi overrides...)."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("must be a string")
+    value = value.strip()
+    if any(unicodedata.category(ch).startswith("C") for ch in value):
+        raise ValueError("control characters are not allowed")
+    return value or None
+
+
+class ProfileUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: str = Field(min_length=1, max_length=60)
+    goal: Goal
+    level: Level
+    target_role: Optional[str] = Field(default=None, max_length=100)
+    native_language: Optional[str] = Field(default=None, max_length=50)
+    correction_style: CorrectionStyle = CorrectionStyle.end_of_session
+
+    @field_validator("display_name", "target_role", "native_language", mode="before")
+    @classmethod
+    def _single_line(cls, value):
+        return _clean_single_line(value)
+
+
+def _profile_to_dict(profile) -> Optional[dict]:
+    if profile is None:
+        return None
+    return {
+        "display_name": profile.display_name,
+        "goal": profile.goal,
+        "target_role": profile.target_role,
+        "level": profile.level,
+        "native_language": profile.native_language,
+        "correction_style": profile.correction_style,
+    }
+
+
+def _onboarding_complete(profile) -> bool:
+    return bool(profile and profile.display_name and profile.goal and profile.level)
+
+
+# --------------------------------------------------------------------------- #
+# /api/me
+# --------------------------------------------------------------------------- #
+@app.get("/api/me")
+async def read_me(
+    user: AuthenticatedUser = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    profile = await get_profile(db, user.user_id)
+    return {
+        "user_id": str(user.user_id),
+        "email": user.email,
+        "profile": _profile_to_dict(profile),
+        "onboarding_complete": _onboarding_complete(profile),
+    }
+
+
+@app.put("/api/me/profile")
+async def update_my_profile(
+    body: ProfileUpdate,
+    user: AuthenticatedUser = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    # user_id comes ONLY from the verified token, never from the request body.
+    profile = await upsert_profile(db, user.user_id, body.model_dump(mode="json"))
+    await db.commit()
+    return {
+        "user_id": str(user.user_id),
+        "email": user.email,
+        "profile": _profile_to_dict(profile),
+        "onboarding_complete": _onboarding_complete(profile),
+    }
 
 
 @app.websocket("/ws/live")
