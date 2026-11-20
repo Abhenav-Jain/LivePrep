@@ -1,6 +1,7 @@
 import uuid
+import datetime
 from typing import Optional, List, Dict, Any
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from models import Session, Turn, Profile
 
@@ -137,3 +138,66 @@ async def upsert_profile(
 
     await db.flush()
     return profile
+
+
+async def list_sessions_with_counts(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    limit: int = 20,
+    offset: int = 0,
+) -> List[Dict[str, Any]]:
+    """Lists sessions owned by user_id with turn counts. Newest first."""
+    # Subquery: count turns per session
+    turn_count_sq = (
+        select(Turn.session_id, func.count(Turn.id).label("turn_count"))
+        .where(Turn.user_id == user_id)
+        .group_by(Turn.session_id)
+        .subquery()
+    )
+    stmt = (
+        select(Session, turn_count_sq.c.turn_count)
+        .outerjoin(turn_count_sq, Session.id == turn_count_sq.c.session_id)
+        .where(Session.user_id == user_id)
+        .order_by(Session.started_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    res = await db.execute(stmt)
+    rows = []
+    for session, turn_count in res.all():
+        rows.append({
+            "id": str(session.id),
+            "scenario": session.scenario,
+            "status": session.status,
+            "started_at": session.started_at.isoformat() if session.started_at else None,
+            "ended_at": session.ended_at.isoformat() if session.ended_at else None,
+            "duration_s": session.duration_s,
+            "turn_count": turn_count or 0,
+            # Step 6 fields (null until reports table exists)
+            "report_status": None,
+            "overall_score": None,
+        })
+    return rows
+
+
+async def finish_session(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    session_id: uuid.UUID,
+    duration_s: int,
+    status: str = "completed",
+) -> bool:
+    """Marks a session as finished. Only touches a session owned by user_id.
+
+    Returns True if a row was updated, False if the session does not belong to the user.
+    """
+    import datetime
+
+    sess = await get_session(db, user_id=user_id, session_id=session_id)
+    if sess is None:
+        return False
+    sess.ended_at = datetime.datetime.now(datetime.timezone.utc)
+    sess.duration_s = max(0, int(duration_s))
+    sess.status = status
+    await db.flush()
+    return True

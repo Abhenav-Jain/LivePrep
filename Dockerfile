@@ -6,10 +6,16 @@ COPY frontend/package*.json ./
 RUN npm ci
 
 COPY frontend/ ./
+
+# Public login settings, baked into the browser bundle at build time (not secrets).
+ARG VITE_SUPABASE_URL
+ARG VITE_SUPABASE_PUBLISHABLE_KEY
+ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
+ENV VITE_SUPABASE_PUBLISHABLE_KEY=$VITE_SUPABASE_PUBLISHABLE_KEY
 RUN npm run build
 
 # --- Stage 2: Production Python Backend ---
-FROM python:3.10-slim AS runner
+FROM python:3.12-slim AS runner
 WORKDIR /app
 
 # Install system dependencies
@@ -31,9 +37,8 @@ COPY backend/ ./backend/
 # Copy compiled frontend from Stage 1 into /app/frontend/dist
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
-# Setup data directory and chown /app and /app/data to non-root user
-ENV DATA_DIR=/app/data
-RUN mkdir -p /app/data && chown -R appuser:appuser /app
+# The app runs as a non-root user and stores nothing locally (data lives in Postgres)
+RUN chown -R appuser:appuser /app
 
 # Set environment
 ENV HOST=0.0.0.0

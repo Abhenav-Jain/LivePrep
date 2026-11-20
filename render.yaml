@@ -6,8 +6,6 @@ services:
     envVars:
       - key: GEMINI_API_KEY
         sync: false
-      - key: LIVEPREP_TOKEN
-        sync: false
       - key: GEMINI_LIVE_MODEL
         sync: false
       - key: ALLOWED_ORIGINS
@@ -20,3 +18,9 @@ services:
         value: "3"
       - key: PORT
         value: 8000
+      # Public browser settings for login (baked into the frontend at build time).
+      # The publishable key is meant to be public; never put a secret/service_role key here.
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_PUBLISHABLE_KEY
+        sync: false

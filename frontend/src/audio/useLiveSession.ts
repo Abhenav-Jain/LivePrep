@@ -1,12 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { StreamAudioPlayer } from './audio-player';
+import { fetchWsTicket, describeApiError } from '../lib/api';
+import { mergeTranscript, TranscriptItem } from './transcriptMerge';
 
-export interface TranscriptItem {
-  id: string;
-  sender: 'user' | 'agent';
-  text: string;
-  timestamp: Date;
-}
+export type { TranscriptItem };
 
 export interface ToolCallItem {
   callId: string;
@@ -64,6 +61,7 @@ registerProcessor('pcm-recorder-processor', PCMRecorderProcessor);
 export function useLiveSession() {
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const [statusMessage, setStatusMessage] = useState<string>('Ready to connect');
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [transcripts, setTranscripts] = useState<TranscriptItem[]>([]);
   const [toolCalls, setToolCalls] = useState<ToolCallItem[]>([]);
   const [isMicActive, setIsMicActive] = useState<boolean>(false);
@@ -74,8 +72,15 @@ export function useLiveSession() {
   const [agentState, setAgentState] = useState<'idle' | 'listening' | 'thinking' | 'speaking'>('idle');
   const [echoShield, setEchoShield] = useState<boolean>(true); // Anti-Self-Interruption Shield
   const [visionMode, setVisionMode] = useState<'adaptive' | 'continuous'>('adaptive');
+  const [isAiMuted, setIsAiMuted] = useState<boolean>(() => {
+    return localStorage.getItem('liveprep_ai_muted') === 'true';
+  });
 
   const wsRef = useRef<WebSocket | null>(null);
+  const connectingRef = useRef<boolean>(false);   // true while a call is being prepared (ticket request)
+  const micStartedRef = useRef<boolean>(false);   // the mic starts once per call, after the server confirms
+  const lastNoticeRef = useRef<string>('');       // last status text from the server (e.g. "closed due to inactivity")
+  const serverErrorRef = useRef<string>('');      // last error text from the server
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const workletNodeRef = useRef<AudioWorkletNode | null>(null);
@@ -102,7 +107,7 @@ export function useLiveSession() {
 
   // Initialize 24kHz Stream Audio Player with instant flush
   useEffect(() => {
-    audioPlayerRef.current = new StreamAudioPlayer((volume) => {
+    const player = new StreamAudioPlayer((volume) => {
       setAgentVolume(volume);
       if (volume > 0.02) {
         setAgentState('speaking');
@@ -110,10 +115,21 @@ export function useLiveSession() {
         setAgentState((prev) => (prev === 'speaking' ? 'idle' : prev));
       }
     });
+    player.setMuted(localStorage.getItem('liveprep_ai_muted') === 'true');
+    audioPlayerRef.current = player;
 
     return () => {
       audioPlayerRef.current?.close();
     };
+  }, []);
+
+  const toggleAiMute = useCallback(() => {
+    setIsAiMuted((prev) => {
+      const next = !prev;
+      localStorage.setItem('liveprep_ai_muted', String(next));
+      audioPlayerRef.current?.setMuted(next);
+      return next;
+    });
   }, []);
 
   // Start Microphone with Acoustic Echo Shield
@@ -186,10 +202,12 @@ export function useLiveSession() {
     } catch (err) {
       console.error('Failed to start microphone:', err);
       setStatusMessage('Microphone access denied or unavailable.');
+      micStartedRef.current = false;
     }
   };
 
   const stopMic = () => {
+    micStartedRef.current = false;
     if (silenceTimerRef.current) {
       clearTimeout(silenceTimerRef.current);
       silenceTimerRef.current = null;
@@ -357,31 +375,44 @@ export function useLiveSession() {
   };
 
   // Connect to WebSocket Gateway with resilient state
-  const connect = useCallback((livePrepToken?: string) => {
-    if (wsRef.current) {
-      wsRef.current.close();
-    }
+  const connect = useCallback(async () => {
+    if (connectingRef.current) return; // ignore double clicks while the ticket is requested
+    connectingRef.current = true;
 
+    if (wsRef.current) {
+      const previous = wsRef.current;
+      wsRef.current = null; // the old socket's onclose must not touch the new call
+      previous.close();
+    }
+    serverErrorRef.current = '';
+    lastNoticeRef.current = '';
     setStatus('connecting');
-    setStatusMessage('Connecting to Live Gateway...');
+    setStatusMessage('Signing in to the Live Gateway...');
+
+    // A browser WebSocket cannot send an Authorization header, so we first get a one-time ticket
+    // from the server (authenticated with the user's login) and send it as the first message.
+    let ticket: string;
+    try {
+      ticket = await fetchWsTicket();
+    } catch (err) {
+      connectingRef.current = false;
+      setStatus('error');
+      setStatusMessage(describeApiError(err));
+      return;
+    }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
     const wsUrl = `${protocol}//${host}/ws/live`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
+    connectingRef.current = false;
 
     ws.onopen = () => {
-      // Send auth message as the first message (required by backend)
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-          type: 'auth',
-          token: livePrepToken || '',
-        }));
-      }
-      setStatus('connected');
-      setStatusMessage('Connected. Initializing Gemini Live...');
-      startMic();
+      // First message: the one-time login ticket. The microphone starts only after the server
+      // confirms the call, so no audio is sent before the login succeeded.
+      ws.send(JSON.stringify({ type: 'auth', ticket }));
+      setStatusMessage('Authenticating...');
     };
 
     ws.onmessage = (event) => {
@@ -406,10 +437,21 @@ export function useLiveSession() {
         const msg = JSON.parse(event.data);
 
         switch (msg.type) {
+          case 'session_started':
+            if (typeof msg.session_id === 'string') {
+              setSessionId(msg.session_id);
+            }
+            break;
+
           case 'session_status':
             setStatusMessage(msg.message);
+            lastNoticeRef.current = typeof msg.message === 'string' ? msg.message : '';
             if (msg.status === 'connected') {
               setStatus('connected');
+              if (!micStartedRef.current) {
+                micStartedRef.current = true;
+                void startMic();
+              }
             } else if (msg.status === 'disconnected') {
               setStatus('disconnected');
             }
@@ -427,36 +469,24 @@ export function useLiveSession() {
             break;
 
           case 'user_transcription':
-            setTranscripts((prev) => [
-              ...prev,
-              {
-                id: Math.random().toString(),
-                sender: 'user',
-                text: msg.text,
-                timestamp: new Date(),
-              },
-            ]);
+            setTranscripts((prev) =>
+              mergeTranscript(prev, { type: 'user_transcription', text: msg.text })
+            );
             break;
 
           case 'agent_transcription':
-            setTranscripts((prev) => {
-              const last = prev[prev.length - 1];
-              if (last && last.sender === 'agent') {
-                return [
-                  ...prev.slice(0, -1),
-                  { ...last, text: last.text + ' ' + msg.text },
-                ];
-              }
-              return [
-                ...prev,
-                {
-                  id: Math.random().toString(),
-                  sender: 'agent',
-                  text: msg.text,
-                  timestamp: new Date(),
-                },
-              ];
-            });
+            setTranscripts((prev) =>
+              mergeTranscript(prev, { type: 'agent_transcription', text: msg.text })
+            );
+            break;
+
+          case 'turn_complete':
+            setTranscripts((prev) =>
+              mergeTranscript(prev, {
+                type: 'turn_complete',
+                speaker: msg.speaker || 'agent',
+              })
+            );
             break;
 
           case 'tool_started':
@@ -489,6 +519,7 @@ export function useLiveSession() {
             break;
 
           case 'error':
+            serverErrorRef.current = typeof msg.message === 'string' ? msg.message : '';
             setStatus('error');
             setStatusMessage(msg.message || 'An error occurred.');
             break;
@@ -502,16 +533,37 @@ export function useLiveSession() {
     };
 
     ws.onerror = (e) => {
+      if (wsRef.current !== ws) return;
       console.error('WebSocket encountered an error:', e);
       setStatus('error');
       setStatusMessage('WebSocket connection failed.');
     };
 
-    ws.onclose = () => {
-      setStatus('disconnected');
-      setStatusMessage('Session disconnected.');
+    ws.onclose = (event) => {
+      if (wsRef.current !== ws) return; // an older socket (or one we closed ourselves): ignore
+      wsRef.current = null;
       stopMic();
       stopVideo();
+
+      if (event.code === 1013) {
+        setStatus('error');
+        setStatusMessage(serverErrorRef.current || 'Server is busy, please try again in a few minutes.');
+      } else if (event.code === 1008) {
+        setStatus('error');
+        setStatusMessage(
+          serverErrorRef.current ||
+            'Could not sign in to the call. Please try again. If it keeps failing, sign out and sign in again.'
+        );
+      } else if (event.code === 1011) {
+        setStatus('error');
+        setStatusMessage(serverErrorRef.current || 'The server could not start your session. Please try again.');
+      } else if (event.code === 1006) {
+        setStatus('error');
+        setStatusMessage('Connection lost. Check your internet connection and try again.');
+      } else {
+        setStatus('disconnected');
+        setStatusMessage(lastNoticeRef.current || 'Session disconnected.');
+      }
     };
   }, []);
 
@@ -530,21 +582,14 @@ export function useLiveSession() {
   const sendTextMessage = (text: string) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && text.trim()) {
       wsRef.current.send(JSON.stringify({ type: 'text', text }));
-      setTranscripts((prev) => [
-        ...prev,
-        {
-          id: Math.random().toString(),
-          sender: 'user',
-          text,
-          timestamp: new Date(),
-        },
-      ]);
+      setTranscripts((prev) => mergeTranscript(prev, { type: 'text', text }));
     }
   };
 
   return {
     status,
     statusMessage,
+    sessionId,
     transcripts,
     toolCalls,
     isMicActive,
@@ -555,6 +600,8 @@ export function useLiveSession() {
     agentState,
     echoShield,
     visionMode,
+    isAiMuted,
+    toggleAiMute,
     videoStream: videoStreamRef.current,
     connect,
     disconnect,
