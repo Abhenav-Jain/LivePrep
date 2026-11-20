@@ -1,0 +1,207 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { ArrowLeft, KeyRound, Loader2, Mail, Radio } from 'lucide-react';
+import { useAuth } from '../auth/AuthProvider';
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const RESEND_SECONDS = 60;
+
+/** Turns a Supabase / network error into a short, friendly sentence. */
+export function friendlyAuthError(err: unknown): string {
+  const e = err as { message?: string; status?: number; code?: string } | null;
+  const text = (e?.message ?? '').toLowerCase();
+  const code = e?.code ?? '';
+
+  if (code === 'over_email_send_rate_limit' || e?.status === 429 || text.includes('rate limit')) {
+    return 'Too many emails requested. Please wait a few minutes before asking for a new code.';
+  }
+  if (code === 'otp_expired' || text.includes('expired') || text.includes('invalid')) {
+    return 'That code is wrong or has expired. Check the latest email, or request a new code.';
+  }
+  if (text.includes('email') && text.includes('valid')) {
+    return 'Please enter a valid email address.';
+  }
+  if (text.includes('failed to fetch') || text.includes('network')) {
+    return 'Cannot reach the login service. Check your internet connection and try again.';
+  }
+  return 'Something went wrong. Please try again.';
+}
+
+export const LoginScreen: React.FC = () => {
+  const { sendCode, verifyCode } = useAuth();
+  const [step, setStep] = useState<'email' | 'code'>('email');
+  const [email, setEmail] = useState('');
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [cooldown, setCooldown] = useState(0);
+  const codeInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const id = window.setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => window.clearTimeout(id);
+  }, [cooldown]);
+
+  useEffect(() => {
+    if (step === 'code') codeInputRef.current?.focus();
+  }, [step]);
+
+  const normalizedEmail = email.trim().toLowerCase();
+
+  const requestCode = async () => {
+    if (!EMAIL_PATTERN.test(normalizedEmail)) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await sendCode(normalizedEmail);
+      setStep('code');
+      setCode('');
+      setCooldown(RESEND_SECONDS);
+    } catch (err) {
+      setError(friendlyAuthError(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitCode = async () => {
+    if (code.length < 6) {
+      setError('Enter the code from your email.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await verifyCode(normalizedEmail, code);
+      // On success the auth listener switches the app to the signed-in view.
+    } catch (err) {
+      setError(friendlyAuthError(err));
+      setBusy(false);
+    }
+  };
+
+  const inputClass =
+    'w-full px-3.5 py-3 rounded-xl bg-slate-900 border border-slate-700 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-primary';
+  const primaryButton =
+    'w-full flex items-center justify-center space-x-2 px-4 py-3 rounded-xl text-sm font-semibold text-white bg-primary hover:bg-blue-600 transition-colors shadow-lg shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed';
+
+  return (
+    <div className="min-h-screen w-screen flex items-center justify-center p-4 bg-background text-slate-100">
+      <div className="w-full max-w-sm space-y-6">
+        <div className="flex flex-col items-center text-center space-y-3">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/20">
+            <Radio className="w-6 h-6" />
+          </div>
+          <h1 className="text-2xl font-extrabold tracking-wide bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-cyan-400 to-purple-400">
+            LivePrep
+          </h1>
+          <p className="text-sm text-slate-400">Practice mock interviews out loud with your AI coach.</p>
+        </div>
+
+        <div className="rounded-2xl bg-surface border border-slate-700/80 shadow-2xl p-6 space-y-5">
+          {step === 'email' ? (
+            <>
+              <div className="space-y-1">
+                <h2 className="text-base font-bold text-white">Sign in or create an account</h2>
+                <p className="text-xs text-slate-400">We will email you a one-time code. No password needed.</p>
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="email" className="flex items-center space-x-1.5 text-xs font-semibold text-slate-300">
+                  <Mail className="w-3.5 h-3.5 text-primary-glow" />
+                  <span>Email</span>
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  autoFocus
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !busy) void requestCode();
+                  }}
+                  className={inputClass}
+                />
+              </div>
+              <button onClick={() => void requestCode()} disabled={busy || !email.trim()} className={primaryButton}>
+                {busy && <Loader2 className="w-4 h-4 animate-spin" />}
+                <span>{busy ? 'Sending...' : 'Send me a code'}</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="space-y-1">
+                <h2 className="text-base font-bold text-white">Check your email</h2>
+                <p className="text-xs text-slate-400">
+                  We sent a sign-in email to <span className="font-mono text-slate-200">{normalizedEmail}</span>.{' '}
+                  <span className="text-slate-200">Click the link in it</span> to sign in (check spam if you cannot find it).
+                  If your email shows a code instead of a link, type the code below.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="code" className="flex items-center space-x-1.5 text-xs font-semibold text-slate-300">
+                  <KeyRound className="w-3.5 h-3.5 text-primary-glow" />
+                  <span>Code (only if your email has one)</span>
+                </label>
+                <input
+                  id="code"
+                  ref={codeInputRef}
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={10}
+                  placeholder="123456"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !busy) void submitCode();
+                  }}
+                  className={`${inputClass} font-mono tracking-[0.3em] text-center text-lg`}
+                />
+              </div>
+              <button onClick={() => void submitCode()} disabled={busy || code.length < 6} className={primaryButton}>
+                {busy && <Loader2 className="w-4 h-4 animate-spin" />}
+                <span>{busy ? 'Checking...' : 'Sign in with code'}</span>
+              </button>
+              <div className="flex items-center justify-between text-xs">
+                <button
+                  onClick={() => {
+                    setStep('email');
+                    setError(null);
+                    setCode('');
+                  }}
+                  className="flex items-center space-x-1 text-slate-400 hover:text-white"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Change email</span>
+                </button>
+                <button
+                  onClick={() => void requestCode()}
+                  disabled={busy || cooldown > 0}
+                  className="text-primary-glow hover:text-white disabled:text-slate-600 disabled:cursor-not-allowed"
+                >
+                  {cooldown > 0 ? `Resend email in ${cooldown}s` : 'Resend email'}
+                </button>
+              </div>
+            </>
+          )}
+
+          {error && (
+            <div role="alert" className="rounded-xl bg-rose-500/10 border border-rose-500/30 px-3 py-2 text-xs text-rose-300">
+              {error}
+            </div>
+          )}
+        </div>
+
+        <p className="text-center text-[11px] text-slate-500">
+          By signing in you agree that your practice sessions are stored in your account.
+        </p>
+      </div>
+    </div>
+  );
+};

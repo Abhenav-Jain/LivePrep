@@ -3,11 +3,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+        VITE_SUPABASE_PUBLISHABLE_KEY: ${VITE_SUPABASE_PUBLISHABLE_KEY:-}
     ports:
       - "8000:8000"
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
-      - LIVEPREP_TOKEN=${LIVEPREP_TOKEN:-}
       - GEMINI_LIVE_MODEL=${GEMINI_LIVE_MODEL:-gemini-3.8-live}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:8000}
       - MAX_CONCURRENT_SESSIONS=${MAX_CONCURRENT_SESSIONS:-3}
@@ -16,10 +18,4 @@ services:
       - SUPABASE_JWT_AUDIENCE=${SUPABASE_JWT_AUDIENCE:-authenticated}
       - HOST=0.0.0.0
       - PORT=8000
-      - DATA_DIR=/app/data
-    volumes:
-      - liveprep-data:/app/data
     restart: unless-stopped
-
-volumes:
-  liveprep-data:

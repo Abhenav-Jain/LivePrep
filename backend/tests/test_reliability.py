@@ -5,10 +5,6 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-os.environ["LIVEPREP_TOKEN"] = "12345678901234567890123456789012"
-os.environ["GEMINI_API_KEY"] = "test_gemini_api_key_valid"
-os.environ["ALLOWED_ORIGINS"] = "http://localhost:3000,http://localhost:8000"
-
 import app
 from gemini_live import GeminiLiveBridge, GoAwayReconnect
 
@@ -83,11 +79,10 @@ def test_go_away_reconnect():
     assert "attempt" not in go_away_notices[0]
 
 
-def test_server_busy_path():
-    """Verify that when semaphore is locked, a new client gets error and close 1013."""
+def test_server_busy_path(make_ticket, ws_db):
+    """When all slots are taken, an authenticated client gets an error and close 1013."""
     client = TestClient(app.app)
 
-    # Acquire all permits
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     acquired = []
@@ -98,7 +93,7 @@ def test_server_busy_path():
     try:
         assert app.SESSION_SEMAPHORE.locked()
         with client.websocket_connect("/ws/live", headers={"origin": "http://localhost:3000"}) as ws:
-            ws.send_json({"type": "auth", "token": app.LIVEPREP_TOKEN})
+            ws.send_json({"type": "auth", "ticket": make_ticket()})
             data = ws.receive_json()
             assert data["type"] == "error"
             assert "Server is busy" in data["message"]
@@ -106,7 +101,6 @@ def test_server_busy_path():
             assert close_frame["type"] == "websocket.close"
             assert close_frame["code"] == 1013
     finally:
-        # Release acquired permits
         for _ in acquired:
             app.SESSION_SEMAPHORE.release()
         loop.close()

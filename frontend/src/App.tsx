@@ -12,18 +12,25 @@ import {
   Layers,
   ShieldCheck,
   ShieldAlert,
+  Volume2,
+  VolumeX,
+  History,
 } from 'lucide-react';
 import { useLiveSession } from './audio/useLiveSession';
+import { useAuth } from './auth/AuthProvider';
 import { VoiceOrb } from './components/VoiceOrb';
 import { ScreenPreview } from './components/ScreenPreview';
 import { TranscriptView } from './components/TranscriptView';
 import { ToolActivityCard } from './components/ToolActivityCard';
 import { SettingsModal } from './components/SettingsModal';
+import { SessionsList } from './components/SessionsList';
+import { SessionTranscriptView } from './components/SessionTranscriptView';
 
 export const App: React.FC = () => {
   const {
     status,
     statusMessage,
+    sessionId,
     transcripts,
     toolCalls,
     isMicActive,
@@ -33,6 +40,8 @@ export const App: React.FC = () => {
     agentVolume,
     agentState,
     echoShield,
+    isAiMuted,
+    toggleAiMute,
     videoStream,
     connect,
     disconnect,
@@ -46,26 +55,37 @@ export const App: React.FC = () => {
     toggleEchoShield,
   } = useLiveSession();
 
-  const [livePrepToken, setLivePrepToken] = useState<string>(() => localStorage.getItem('omni_liveprep_token') || '');
+  const { email, signOut } = useAuth();
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [inputPrompt, setInputPrompt] = useState<string>('');
+  const [route, setRoute] = useState<string>(() => window.location.hash || '#/');
 
-  // Purge deprecated storage keys
+  // Listen to hash changes for simple routing without an external library
+  useEffect(() => {
+    const onHashChange = () => setRoute(window.location.hash || '#/');
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  // Purge deprecated storage keys (old API key, model choice and the retired shared token)
   useEffect(() => {
     localStorage.removeItem('omni_gemini_api_key');
     localStorage.removeItem('omni_gemini_model');
+    localStorage.removeItem('omni_liveprep_token');
   }, []);
-
-  useEffect(() => {
-    localStorage.setItem('omni_liveprep_token', livePrepToken);
-  }, [livePrepToken]);
 
   const handleToggleConnect = () => {
     if (status === 'connected' || status === 'connecting') {
       disconnect();
     } else {
-      connect(livePrepToken);
+      void connect();
     }
+  };
+
+  const handleSignOut = async () => {
+    disconnect(); // end any running call first
+    setIsSettingsOpen(false);
+    await signOut();
   };
 
   const handleSendText = (e: React.FormEvent) => {
@@ -75,6 +95,13 @@ export const App: React.FC = () => {
       setInputPrompt('');
     }
   };
+
+  // Determine current page
+  const isSessionsList = route === '#/sessions';
+  const isTranscriptView = route.startsWith('#/sessions/') && !route.endsWith('/report');
+  const transcriptSessionId = isTranscriptView
+    ? route.replace('#/sessions/', '').split('/')[0]
+    : null;
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-background text-slate-100 font-sans selection:bg-primary/30">
@@ -94,29 +121,74 @@ export const App: React.FC = () => {
               </span>
             </div>
             <p className="text-[10px] font-mono text-slate-400 hidden sm:block">
-              Multimodal Real-Time AI Companion
+              Multimodal Real-Time AI Mock Interviewer
             </p>
           </div>
         </div>
 
-        <div className="flex items-center space-x-2 sm:space-x-3">
-          {/* Main Quick Action Header Power Button */}
+        {/* Center Navigation Tabs */}
+        <nav className="hidden sm:flex items-center space-x-1 bg-slate-900/80 p-1 rounded-xl border border-slate-800 text-xs">
           <button
-            onClick={handleToggleConnect}
-            className={`flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl font-bold text-xs transition-all shadow-md ${
-              status === 'connected'
-                ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-600/30'
-                : 'bg-primary hover:bg-blue-600 text-white shadow-primary/30 animate-pulse'
+            onClick={() => {
+              window.location.hash = '#/';
+            }}
+            className={`px-3 py-1 rounded-lg font-medium transition-colors ${
+              !route.startsWith('#/sessions')
+                ? 'bg-primary text-white shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Power className="w-3.5 h-3.5" />
-            <span>{status === 'connected' ? 'End Call' : 'Start Live Call'}</span>
+            Practice Call
+          </button>
+          <button
+            onClick={() => {
+              window.location.hash = '#/sessions';
+            }}
+            className={`flex items-center space-x-1.5 px-3 py-1 rounded-lg font-medium transition-colors ${
+              route.startsWith('#/sessions')
+                ? 'bg-primary text-white shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <History className="w-3.5 h-3.5" />
+            <span>Past Sessions</span>
+          </button>
+        </nav>
+
+        <div className="flex items-center space-x-2 sm:space-x-3">
+          {/* Main Quick Action Header Power Button (only shown in live view) */}
+          {!route.startsWith('#/sessions') && (
+            <button
+              onClick={handleToggleConnect}
+              className={`flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl font-bold text-xs transition-all shadow-md ${
+                status === 'connected'
+                  ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-600/30'
+                  : 'bg-primary hover:bg-blue-600 text-white shadow-primary/30 animate-pulse'
+              }`}
+            >
+              <Power className="w-3.5 h-3.5" />
+              <span>{status === 'connected' ? 'End Call' : 'Start Live Call'}</span>
+            </button>
+          )}
+
+          {/* AI Voice Mute Toggle */}
+          <button
+            onClick={toggleAiMute}
+            className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-mono transition-colors ${
+              isAiMuted
+                ? 'bg-amber-500/10 border-amber-500/30 text-amber-400 hover:bg-amber-500/20'
+                : 'bg-slate-800/60 border-slate-700/60 text-slate-300 hover:text-white'
+            }`}
+            title={isAiMuted ? 'Unmute AI Voice' : 'Mute AI Voice'}
+          >
+            {isAiMuted ? <VolumeX className="w-4 h-4 text-amber-400" /> : <Volume2 className="w-4 h-4 text-slate-300" />}
+            <span className="hidden md:inline">{isAiMuted ? 'Muted' : 'Voice'}</span>
           </button>
 
           {/* Echo Shield Toggle */}
           <button
             onClick={toggleEchoShield}
-            className={`hidden md:flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border text-xs font-mono transition-colors ${
+            className={`hidden lg:flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border text-xs font-mono transition-colors ${
               echoShield
                 ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
                 : 'bg-slate-800/60 border-slate-700/60 text-slate-400 hover:bg-slate-800'
@@ -147,167 +219,201 @@ export const App: React.FC = () => {
           <button
             onClick={() => setIsSettingsOpen(true)}
             className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/60 transition-colors"
-            title="Configure LivePrep Token"
+            title="Settings & Profile"
           >
             <SettingsIcon className="w-4 h-4" />
           </button>
         </div>
       </header>
 
-      {/* Main Cockpit Workspace - Scrollable on small screens */}
-      <main className="flex-1 flex flex-col lg:flex-row overflow-y-auto p-3 sm:p-4 gap-4 scrollbar-thin">
-        {/* Left Section: Voice Orb, Vision PiP, and Controls */}
-        <section className="flex-1 lg:max-w-[480px] flex flex-col rounded-3xl bg-surface/50 border border-slate-800/80 backdrop-blur-xl p-4 sm:p-5 relative justify-between shadow-2xl space-y-4">
-          {/* Status Message Header */}
-          <div className="flex items-center justify-between text-xs font-mono text-slate-400 z-10">
-            <span className="flex items-center space-x-2">
-              <Layers className="w-3.5 h-3.5 text-cyan-400" />
-              <span>{statusMessage}</span>
-            </span>
-            <div className="flex items-center space-x-2">
-              {isMicActive && (
-                <span className="flex items-center space-x-1 text-emerald-400 text-[11px]">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>16kHz MIC</span>
-                </span>
-              )}
+      {/* Post-Call Banner (if session recently ended and has a session_id) */}
+      {status === 'disconnected' && sessionId && !route.startsWith('#/sessions') && (
+        <div className="bg-primary/10 border-b border-primary/20 px-4 py-2.5 flex items-center justify-between text-xs text-blue-200 z-10">
+          <span>Interview call ended. Would you like to review your transcript?</span>
+          <button
+            onClick={() => {
+              window.location.hash = `#/sessions/${sessionId}`;
+            }}
+            className="px-3 py-1 rounded-lg bg-primary hover:bg-primary-hover text-white font-semibold transition-colors shadow-sm"
+          >
+            View Transcript &rarr;
+          </button>
+        </div>
+      )}
+
+      {/* Route Views */}
+      {isSessionsList ? (
+        <SessionsList
+          onSelectSession={(id) => {
+            window.location.hash = `#/sessions/${id}`;
+          }}
+          onBackToCall={() => {
+            window.location.hash = '#/';
+          }}
+        />
+      ) : isTranscriptView && transcriptSessionId ? (
+        <SessionTranscriptView
+          sessionId={transcriptSessionId}
+          onBack={() => {
+            window.location.hash = '#/sessions';
+          }}
+        />
+      ) : (
+        /* Main Cockpit Workspace - Scrollable on small screens */
+        <main className="flex-1 flex flex-col lg:flex-row overflow-y-auto p-3 sm:p-4 gap-4 scrollbar-thin">
+          {/* Left Section: Voice Orb, Vision PiP, and Controls */}
+          <section className="flex-1 lg:max-w-[480px] flex flex-col rounded-3xl bg-surface/50 border border-slate-800/80 backdrop-blur-xl p-4 sm:p-5 relative justify-between shadow-2xl space-y-4">
+            {/* Status Message Header */}
+            <div className="flex items-center justify-between text-xs font-mono text-slate-400 z-10">
+              <span className="flex items-center space-x-2">
+                <Layers className="w-3.5 h-3.5 text-cyan-400" />
+                <span>{statusMessage}</span>
+              </span>
+              <div className="flex items-center space-x-2">
+                {isMicActive && (
+                  <span className="flex items-center space-x-1 text-emerald-400 text-[11px]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>16kHz MIC</span>
+                  </span>
+                )}
+              </div>
             </div>
-          </div>
 
-          {/* Center Stage: Voice Orb & PiP overlay */}
-          <div className="relative flex-1 flex flex-col items-center justify-center min-h-[220px]">
-            <VoiceOrb
-              state={agentState}
-              userVolume={userVolume}
-              agentVolume={agentVolume}
-            />
+            {/* Center Stage: Voice Orb & PiP overlay */}
+            <div className="relative flex-1 flex flex-col items-center justify-center min-h-[220px]">
+              <VoiceOrb
+                state={agentState}
+                userVolume={userVolume}
+                agentVolume={agentVolume}
+              />
 
-            {/* Live Video Preview overlay */}
-            <div className="absolute top-0 right-0 max-w-[240px] z-10">
-              <ScreenPreview
-                stream={videoStream}
-                isActive={isScreenActive || isCameraActive}
-                type={isScreenActive ? 'screen' : 'camera'}
-                onStop={isScreenActive ? stopScreenShare : stopCamera}
-                onSnapshot={captureSnapshot}
+              {/* Live Video Preview overlay */}
+              <div className="absolute top-0 right-0 max-w-[240px] z-10">
+                <ScreenPreview
+                  stream={videoStream}
+                  isActive={isScreenActive || isCameraActive}
+                  type={isScreenActive ? 'screen' : 'camera'}
+                  onStop={isScreenActive ? stopScreenShare : stopCamera}
+                  onSnapshot={captureSnapshot}
+                />
+              </div>
+            </div>
+
+            {/* Bottom Dock Control Bar */}
+            <div className="space-y-3 z-10 pt-2 border-t border-slate-800/60">
+              {/* Action Buttons */}
+              <div className="flex items-center justify-center space-x-2 sm:space-x-3">
+                {/* Power / Connect Button */}
+                <button
+                  onClick={handleToggleConnect}
+                  className={`flex items-center space-x-2 px-5 py-2.5 rounded-2xl font-semibold text-xs sm:text-sm transition-all shadow-lg ${
+                    status === 'connected'
+                      ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-600/30'
+                      : 'bg-primary hover:bg-blue-600 text-white shadow-primary/30'
+                  }`}
+                >
+                  <Power className="w-4 h-4" />
+                  <span>{status === 'connected' ? 'End Call' : 'Start Live Session'}</span>
+                </button>
+
+                {/* Mic Toggle */}
+                <button
+                  onClick={toggleMic}
+                  disabled={status !== 'connected'}
+                  className={`p-2.5 sm:p-3 rounded-2xl border transition-all ${
+                    isMicActive
+                      ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/30'
+                      : 'bg-slate-800/80 border-slate-700 text-slate-400 hover:text-white'
+                  } ${status !== 'connected' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  title={isMicActive ? 'Mute Microphone' : 'Unmute Microphone'}
+                >
+                  {isMicActive ? <Mic className="w-4 h-4 sm:w-5 sm:h-5" /> : <MicOff className="w-4 h-4 sm:w-5 sm:h-5" />}
+                </button>
+
+                {/* Screen Share Toggle */}
+                <button
+                  onClick={isScreenActive ? stopScreenShare : startScreenShare}
+                  disabled={status !== 'connected'}
+                  className={`p-2.5 sm:p-3 rounded-2xl border transition-all ${
+                    isScreenActive
+                      ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400 hover:bg-cyan-500/30 shadow-lg shadow-cyan-500/20'
+                      : 'bg-slate-800/80 border-slate-700 text-slate-400 hover:text-white'
+                  } ${status !== 'connected' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  title={isScreenActive ? 'Stop Screen Share' : 'Share Screen with Gemini'}
+                >
+                  <Monitor className="w-4 h-4 sm:w-5 sm:h-5" />
+                </button>
+
+                {/* Webcam Toggle */}
+                <button
+                  onClick={isCameraActive ? stopCamera : startCamera}
+                  disabled={status !== 'connected'}
+                  className={`p-2.5 sm:p-3 rounded-2xl border transition-all ${
+                    isCameraActive
+                      ? 'bg-purple-500/20 border-purple-500/50 text-purple-400 hover:bg-purple-500/30'
+                      : 'bg-slate-800/80 border-slate-700 text-slate-400 hover:text-white'
+                  } ${status !== 'connected' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  title={isCameraActive ? 'Stop Webcam' : 'Turn on Webcam'}
+                >
+                  {isCameraActive ? <Video className="w-4 h-4 sm:w-5 sm:h-5" /> : <VideoOff className="w-4 h-4 sm:w-5 sm:h-5" />}
+                </button>
+              </div>
+
+              {/* Text Input / Quick injection */}
+              <form onSubmit={handleSendText} className="relative flex items-center">
+                <input
+                  type="text"
+                  placeholder={
+                    status === 'connected'
+                      ? 'Type message or speak into mic...'
+                      : 'Click "Start Live Call" above to begin...'
+                  }
+                  value={inputPrompt}
+                  onChange={(e) => setInputPrompt(e.target.value)}
+                  disabled={status !== 'connected'}
+                  className="w-full pl-4 pr-10 py-2.5 rounded-2xl bg-slate-900/80 border border-slate-800 text-xs sm:text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-primary/60 transition-colors disabled:opacity-50"
+                />
+                <button
+                  type="submit"
+                  disabled={status !== 'connected' || !inputPrompt.trim()}
+                  className="absolute right-1.5 p-1.5 rounded-xl bg-primary text-white hover:bg-blue-600 disabled:opacity-40 transition-opacity"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                </button>
+              </form>
+            </div>
+          </section>
+
+          {/* Right Section: Transcripts & Async Tool Activities (Persistent captions) */}
+          <section className="flex-1 flex flex-col gap-4 min-h-[400px]">
+            {/* Real-time Transcription Stream */}
+            <div className="flex-1 min-h-[260px] overflow-hidden">
+              <TranscriptView
+                transcripts={transcripts}
+                onSuggestedPromptClick={(prompt) => {
+                  if (status === 'connected') {
+                    sendTextMessage(prompt);
+                  } else {
+                    handleToggleConnect();
+                  }
+                }}
               />
             </div>
-          </div>
 
-          {/* Bottom Dock Control Bar */}
-          <div className="space-y-3 z-10 pt-2 border-t border-slate-800/60">
-            {/* Action Buttons */}
-            <div className="flex items-center justify-center space-x-2 sm:space-x-3">
-              {/* Power / Connect Button */}
-              <button
-                onClick={handleToggleConnect}
-                className={`flex items-center space-x-2 px-5 py-2.5 rounded-2xl font-semibold text-xs sm:text-sm transition-all shadow-lg ${
-                  status === 'connected'
-                    ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-600/30'
-                    : 'bg-primary hover:bg-blue-600 text-white shadow-primary/30'
-                }`}
-              >
-                <Power className="w-4 h-4" />
-                <span>{status === 'connected' ? 'End Call' : 'Start Live Session'}</span>
-              </button>
-
-              {/* Mic Toggle */}
-              <button
-                onClick={toggleMic}
-                disabled={status !== 'connected'}
-                className={`p-2.5 sm:p-3 rounded-2xl border transition-all ${
-                  isMicActive
-                    ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/30'
-                    : 'bg-slate-800/80 border-slate-700 text-slate-400 hover:text-white'
-                } ${status !== 'connected' ? 'opacity-50 cursor-not-allowed' : ''}`}
-                title={isMicActive ? 'Mute Microphone' : 'Unmute Microphone'}
-              >
-                {isMicActive ? <Mic className="w-4 h-4 sm:w-5 sm:h-5" /> : <MicOff className="w-4 h-4 sm:w-5 sm:h-5" />}
-              </button>
-
-              {/* Screen Share Toggle */}
-              <button
-                onClick={isScreenActive ? stopScreenShare : startScreenShare}
-                disabled={status !== 'connected'}
-                className={`p-2.5 sm:p-3 rounded-2xl border transition-all ${
-                  isScreenActive
-                    ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400 hover:bg-cyan-500/30 shadow-lg shadow-cyan-500/20'
-                    : 'bg-slate-800/80 border-slate-700 text-slate-400 hover:text-white'
-                } ${status !== 'connected' ? 'opacity-50 cursor-not-allowed' : ''}`}
-                title={isScreenActive ? 'Stop Screen Share' : 'Share Screen with Gemini'}
-              >
-                <Monitor className="w-4 h-4 sm:w-5 sm:h-5" />
-              </button>
-
-              {/* Webcam Toggle */}
-              <button
-                onClick={isCameraActive ? stopCamera : startCamera}
-                disabled={status !== 'connected'}
-                className={`p-2.5 sm:p-3 rounded-2xl border transition-all ${
-                  isCameraActive
-                    ? 'bg-purple-500/20 border-purple-500/50 text-purple-400 hover:bg-purple-500/30'
-                    : 'bg-slate-800/80 border-slate-700 text-slate-400 hover:text-white'
-                } ${status !== 'connected' ? 'opacity-50 cursor-not-allowed' : ''}`}
-                title={isCameraActive ? 'Stop Webcam' : 'Turn on Webcam'}
-              >
-                {isCameraActive ? <Video className="w-4 h-4 sm:w-5 sm:h-5" /> : <VideoOff className="w-4 h-4 sm:w-5 sm:h-5" />}
-              </button>
+            {/* Async Non-Blocking Tool Cards */}
+            <div className="h-56 sm:h-64 flex-shrink-0">
+              <ToolActivityCard toolCalls={toolCalls} />
             </div>
-
-            {/* Text Input / Quick injection */}
-            <form onSubmit={handleSendText} className="relative flex items-center">
-              <input
-                type="text"
-                placeholder={
-                  status === 'connected'
-                    ? 'Type message or speak into mic...'
-                    : 'Click "Start Live Call" above to begin...'
-                }
-                value={inputPrompt}
-                onChange={(e) => setInputPrompt(e.target.value)}
-                disabled={status !== 'connected'}
-                className="w-full pl-4 pr-10 py-2.5 rounded-2xl bg-slate-900/80 border border-slate-800 text-xs sm:text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-primary/60 transition-colors disabled:opacity-50"
-              />
-              <button
-                type="submit"
-                disabled={status !== 'connected' || !inputPrompt.trim()}
-                className="absolute right-1.5 p-1.5 rounded-xl bg-primary text-white hover:bg-blue-600 disabled:opacity-40 transition-opacity"
-              >
-                <Send className="w-3.5 h-3.5" />
-              </button>
-            </form>
-          </div>
-        </section>
-
-        {/* Right Section: Transcripts & Async Tool Activities */}
-        <section className="flex-1 flex flex-col gap-4 min-h-[400px]">
-          {/* Real-time Transcription Stream */}
-          <div className="flex-1 min-h-[260px] overflow-hidden">
-            <TranscriptView
-              transcripts={transcripts}
-              onSuggestedPromptClick={(prompt) => {
-                if (status === 'connected') {
-                  sendTextMessage(prompt);
-                } else {
-                  handleToggleConnect();
-                }
-              }}
-            />
-          </div>
-
-          {/* Async Non-Blocking Tool Cards */}
-          <div className="h-56 sm:h-64 flex-shrink-0">
-            <ToolActivityCard toolCalls={toolCalls} />
-          </div>
-        </section>
-      </main>
+          </section>
+        </main>
+      )}
 
       {/* Settings Modal */}
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
-        livePrepToken={livePrepToken}
-        onLivePrepTokenChange={setLivePrepToken}
+        email={email}
+        onSignOut={() => void handleSignOut()}
       />
     </div>
   );

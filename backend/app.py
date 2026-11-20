@@ -1,6 +1,7 @@
 import os
 import json
-import secrets
+import time
+import uuid
 import asyncio
 import logging
 import unicodedata
@@ -14,9 +15,20 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from gemini_live import GeminiLiveBridge
+from transcript import TurnAssembler
 from auth import current_user, AuthenticatedUser
 from db import AsyncSessionLocal
-from repositories import get_profile, upsert_profile
+from repositories import (
+    get_profile,
+    upsert_profile,
+    create_session,
+    finish_session,
+    add_turn,
+    get_turns,
+    list_sessions_with_counts,
+    get_session,
+)
+from tickets import TicketStore, TicketLimitError
 
 load_dotenv()
 
@@ -27,13 +39,6 @@ logging.basicConfig(
 logger = logging.getLogger("liveprep-app")
 
 # Fail-closed credential validation on startup
-LIVEPREP_TOKEN = os.getenv("LIVEPREP_TOKEN", "")
-if not LIVEPREP_TOKEN or len(LIVEPREP_TOKEN) < 32:
-    raise RuntimeError(
-        "CRITICAL STARTUP ERROR: LIVEPREP_TOKEN is missing or shorter than 32 characters. "
-        "Set a strong random token of at least 32 characters in your environment."
-    )
-
 SERVER_API_KEY = os.getenv("GEMINI_API_KEY", "")
 if not SERVER_API_KEY or SERVER_API_KEY == "your_gemini_api_key_here":
     raise RuntimeError(
@@ -71,6 +76,16 @@ DEFAULT_MODEL = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.8-live")
 # Concurrency limit for sessions (default 3)
 MAX_CONCURRENT_SESSIONS = int(os.getenv("MAX_CONCURRENT_SESSIONS", "3"))
 SESSION_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_SESSIONS)
+
+# One-time WebSocket login tickets (in memory: single server instance, see tickets.py)
+ticket_store = TicketStore(ttl_seconds=float(os.getenv("WS_TICKET_TTL_SECONDS", "60")))
+
+# Users that currently have a live session (one session per user at a time)
+ACTIVE_USERS: set = set()
+
+# Interview scenarios a client may request; anything else becomes the default
+ALLOWED_SCENARIOS = {"mixed", "hr_round", "technical", "behavioral"}
+DEFAULT_SCENARIO = "mixed"
 
 # Authentication timeout for WebSocket initial auth message (seconds)
 AUTH_TIMEOUT_SECONDS = float(os.getenv("AUTH_TIMEOUT_SECONDS", "10"))
@@ -200,12 +215,114 @@ async def update_my_profile(
     }
 
 
+# --------------------------------------------------------------------------- #
+# /api/sessions  — session list and transcript
+# --------------------------------------------------------------------------- #
+
+@app.get("/api/sessions")
+async def list_my_sessions(
+    limit: int = 20,
+    offset: int = 0,
+    user: AuthenticatedUser = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List the caller's sessions, newest first. limit capped at 50."""
+    limit = min(max(1, limit), 50)
+    offset = max(0, offset)
+    rows = await list_sessions_with_counts(db, user_id=user.user_id, limit=limit, offset=offset)
+    return {"sessions": rows}
+
+
+@app.get("/api/sessions/{session_id}/transcript")
+async def get_session_transcript(
+    session_id: str,
+    user: AuthenticatedUser = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return a session and its turns. 404 for a foreign or unknown session_id."""
+    try:
+        sid = uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    session = await get_session(db, user_id=user.user_id, session_id=sid)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    turns = await get_turns(db, user_id=user.user_id, session_id=sid)
+    return {
+        "session": {
+            "id": str(session.id),
+            "scenario": session.scenario,
+            "status": session.status,
+            "started_at": session.started_at.isoformat() if session.started_at else None,
+            "ended_at": session.ended_at.isoformat() if session.ended_at else None,
+            "duration_s": session.duration_s,
+        },
+        "turns": [
+            {
+                "idx": t.idx,
+                "speaker": t.speaker,
+                "text": t.text,
+                "started_at_ms": t.started_at_ms,
+                "ended_at_ms": t.ended_at_ms,
+            }
+            for t in turns
+        ],
+    }
+
+
+@app.post("/api/ws-ticket")
+async def create_ws_ticket(user: AuthenticatedUser = Depends(current_user)):
+    """Issues a single-use ticket (valid ~60 s) that the browser sends as its first WebSocket message."""
+    try:
+        ticket = ticket_store.issue(user.user_id)
+    except TicketLimitError:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many connection attempts. Please wait a minute and try again.",
+        )
+    return {"ticket": ticket, "expires_in": int(ticket_store.ttl_seconds)}
+
+
+async def _open_session_record(user_id: uuid.UUID, scenario: str) -> uuid.UUID:
+    """Creates the session row on the server. The id is generated here, never by the client or the model."""
+    async with AsyncSessionLocal() as db:
+        row = await create_session(db, user_id=user_id, scenario=scenario)
+        await db.commit()
+        return row.id
+
+
+async def _close_session_record(user_id: uuid.UUID, session_id: uuid.UUID, duration_s: float, status_value: str) -> None:
+    """Marks the session finished. Never raises: a storage hiccup must not crash the connection handler."""
+    try:
+        async with AsyncSessionLocal() as db:
+            await finish_session(db, user_id=user_id, session_id=session_id,
+                                 duration_s=int(duration_s), status=status_value)
+            await db.commit()
+    except Exception as e:  # noqa: BLE001
+        logger.error("Could not finalize session %s: %s", session_id, type(e).__name__)
+
+
+async def _reject(websocket: WebSocket, code: int, message: Optional[str] = None) -> None:
+    """Optionally tell the client why, then close. Never raises."""
+    try:
+        if message:
+            await websocket.send_text(json.dumps({"type": "error", "message": message}))
+        await websocket.close(code=code)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 @app.websocket("/ws/live")
 async def websocket_live_endpoint(websocket: WebSocket):
     """
-    WebSocket endpoint for real-time audio/video streaming and tool events.
-    Requires Origin check and token authentication (first message must be auth within timeout).
-    Uses server GEMINI_API_KEY and GEMINI_LIVE_MODEL only.
+    WebSocket endpoint for real-time audio and the live transcript.
+
+    Flow: origin check -> accept -> first message {"type":"auth","ticket":...} within the
+    timeout (ticket comes from POST /api/ws-ticket) -> one session per user -> capacity check
+    -> server creates the session row -> Gemini Live session runs -> session row is finalized.
+    Uses the server GEMINI_API_KEY and GEMINI_LIVE_MODEL only.
     """
     # 1. Origin check (browsers do NOT enforce CORS on WebSocket)
     origin = websocket.headers.get("origin")
@@ -214,78 +331,162 @@ async def websocket_live_endpoint(websocket: WebSocket):
         await websocket.close(code=1008)
         return
 
-    # 2. Accept connection first so we can respond cleanly
+    # 2. Accept first so we can answer cleanly
     await websocket.accept()
     logger.info("New client connected to /ws/live")
 
-    # 3. Wait for the first message with timeout (asyncio.wait_for).
-    # On timeout, invalid JSON, wrong message type, or token mismatch: close with code 1008 without touching semaphore.
+    # 3. First message must arrive in time and be valid. Any problem: close 1008 without
+    #    touching the semaphore, so unauthenticated clients can never occupy session slots.
     try:
         auth_timeout = float(os.getenv("AUTH_TIMEOUT_SECONDS", str(AUTH_TIMEOUT_SECONDS)))
         first_raw = await asyncio.wait_for(websocket.receive_text(), timeout=auth_timeout)
         first = json.loads(first_raw)
-    except (asyncio.TimeoutError, TimeoutError):
+    except Exception:  # timeout, disconnect, binary frame, invalid JSON
         logger.warning("Authentication failed")
-        await websocket.close(code=1008)
-        return
-    except Exception:
-        logger.warning("Authentication failed")
-        await websocket.close(code=1008)
+        await _reject(websocket, 1008)
         return
 
-    client_token = str(first.get("token", "")).strip()
-    expected_token = LIVEPREP_TOKEN.strip()
-    if first.get("type") != "auth" or not secrets.compare_digest(client_token, expected_token):
+    ticket = first.get("ticket") if isinstance(first, dict) else None
+    if (
+        not isinstance(first, dict)
+        or first.get("type") != "auth"
+        or not isinstance(ticket, str)
+        or not (16 <= len(ticket) <= 128)
+    ):
         logger.warning("Authentication failed")
-        await websocket.close(code=1008)
+        await _reject(websocket, 1008)
         return
 
-    # 4. Only after successful authentication: check server capacity
+    user_id = ticket_store.consume(ticket)  # single use: the ticket is burned here
+    if user_id is None:
+        logger.warning("Authentication failed")
+        await _reject(websocket, 1008)
+        return
+
+    requested = first.get("scenario")
+    scenario = requested if isinstance(requested, str) and requested in ALLOWED_SCENARIOS else DEFAULT_SCENARIO
+
+    # 4. One live session per user, server capacity, and storage must be available.
+    #    (No await between the check and ACTIVE_USERS.add, so two quick tabs cannot both pass.)
+    if user_id in ACTIVE_USERS:
+        logger.warning("Rejected second concurrent session for a user")
+        await _reject(websocket, 1008, "You already have a live session open. Close it first, then try again.")
+        return
+
     if SESSION_SEMAPHORE.locked():
         logger.warning("Server is busy (semaphore locked). Rejecting client with 1013.")
-        try:
-            await websocket.send_text(json.dumps({
-                "type": "error",
-                "message": "Server is busy, please try again in a few minutes."
-            }))
-            await websocket.close(code=1013)
-        except Exception:
-            pass
+        await _reject(websocket, 1013, "Server is busy, please try again in a few minutes.")
         return
 
-    # 5. Acquire semaphore and run session
-    async with SESSION_SEMAPHORE:
-        bridge = GeminiLiveBridge(api_key=SERVER_API_KEY, model=DEFAULT_MODEL)
+    if AsyncSessionLocal is None:
+        logger.error("DATABASE_URL is not configured: refusing to start an unrecorded session")
+        await _reject(websocket, 1011, "Session storage is not available right now. Please try again later.")
+        return
 
-        async def ws_send(data: dict):
+    ACTIVE_USERS.add(user_id)
+    try:
+        async with SESSION_SEMAPHORE:
             try:
-                await websocket.send_text(json.dumps(data))
-            except Exception as e:
-                logger.warning(f"WebSocket send failed: {e}")
-                raise
+                session_id = await _open_session_record(user_id, scenario)
+            except Exception as e:  # noqa: BLE001
+                logger.error("Could not create session record: %s", type(e).__name__)
+                await _reject(websocket, 1011, "Could not start your session. Please try again.")
+                return
 
-        async def ws_receive():
+            logger.info("Session %s started", session_id)
+            started = time.monotonic()
+            outcome = "completed"
+
+            # Build the turn sink: persists each completed turn to the database as it arrives.
+            # A failure in the sink must NEVER crash or end the live call.
+            async def _save_turn(turn) -> None:
+                try:
+                    async with AsyncSessionLocal() as db:
+                        await add_turn(
+                            db,
+                            user_id=user_id,
+                            session_id=session_id,
+                            idx=turn.idx,
+                            speaker=turn.speaker,
+                            text=turn.text,
+                            started_at_ms=turn.started_at_ms,
+                            ended_at_ms=turn.ended_at_ms,
+                        )
+                        await db.commit()
+                except Exception as e:  # noqa: BLE001
+                    logger.error("Turn save failed (session=%s): %s", session_id, type(e).__name__)
+
+            turn_assembler = TurnAssembler(on_turn=_save_turn)
+
+            bridge = GeminiLiveBridge(
+                api_key=SERVER_API_KEY,
+                model=DEFAULT_MODEL,
+                session_id=str(session_id),
+                user_id=str(user_id),
+                assembler=turn_assembler,
+            )
+
+            # Notify the client which session_id was created (for linking to the report later)
             try:
-                message = await websocket.receive()
-                if message["type"] == "websocket.disconnect":
+                await websocket.send_text(json.dumps({
+                    "type": "session_started",
+                    "session_id": str(session_id),
+                }))
+            except Exception:  # noqa: BLE001
+                pass
+
+            client_gone = False  # becomes True when the browser hung up (normal, not a server error)
+
+            async def ws_send(data: dict):
+                nonlocal client_gone
+                try:
+                    await websocket.send_text(json.dumps(data))
+                except Exception as e:
+                    client_gone = True
+                    logger.warning(f"WebSocket send failed: {e}")
+                    raise
+
+            async def ws_receive():
+                nonlocal client_gone
+                try:
+                    message = await websocket.receive()
+                    if message["type"] == "websocket.disconnect":
+                        client_gone = True
+                        return None
+                    if "text" in message:
+                        return message["text"]
+                    if "bytes" in message:
+                        return message["bytes"]
                     return None
-                if "text" in message:
-                    return message["text"]
-                if "bytes" in message:
-                    return message["bytes"]
-                return None
-            except WebSocketDisconnect:
-                return None
-            except Exception as e:
-                logger.warning(f"Error receiving from WebSocket: {e}")
-                return None
+                except WebSocketDisconnect:
+                    client_gone = True
+                    return None
+                except Exception as e:
+                    logger.warning(f"Error receiving from WebSocket: {e}")
+                    return None
 
-        try:
-            await bridge.run_session(ws_send=ws_send, ws_receive=ws_receive)
-        except Exception as e:
-            logger.error(f"Error in Live session lifecycle: {e}", exc_info=True)
-        finally:
-            logger.info("Client disconnected from /ws/live")
+            try:
+                await bridge.run_session(ws_send=ws_send, ws_receive=ws_receive)
+            except Exception as e:
+                if client_gone:
+                    # The browser hung up while we were talking to it: a normal end of the call.
+                    logger.info("Client disconnected during the session")
+                else:
+                    outcome = "error"
+                    logger.error(f"Error in Live session lifecycle: {e}", exc_info=True)
+            finally:
+                # shield: even if this handler is cancelled (server shutdown), the row is still finalized
+                await asyncio.shield(
+                    _close_session_record(user_id, session_id, time.monotonic() - started, outcome)
+                )
+                logger.info("Session %s ended (%s)", session_id, outcome)
+                # Tell the client the call is over (normal closure), after the record is saved.
+                try:
+                    await websocket.close(code=1000)
+                except Exception:  # noqa: BLE001
+                    pass
+    finally:
+        ACTIVE_USERS.discard(user_id)
 
 
 FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"

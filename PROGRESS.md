@@ -71,3 +71,24 @@
   - Frontend `npm run build` completed cleanly without errors.
 - **Needs human check**:
   - None for Part 4.1 (database foundations verified against live database).
+
+## Step 5: Transcripts and Storage
+- **Status**: Completed
+- **Branch**: `step5-transcripts-storage`
+- **Files Changed**:
+  - `backend/transcript.py`: Implemented `TurnAssembler` and `join_fragments`. Normalizes whitespace runs, tracks monotonic millisecond timestamps since session start, caps turns at 8,000 characters and sessions at 2,000 turns. Speaker change queues turns in ready buffer; turns complete on speaker change, `turn_complete`, barge-in, or session `flush()`.
+  - `backend/gemini_live.py`: Wired `TurnAssembler` to `GeminiLiveBridge`. Fed input/output audio transcription into assembler, handled barge-in and `turn_complete`, sent `turn_complete` WebSocket message to browser, and flushed assembler on session end.
+  - `backend/app.py`: Created turn persistence sink using `repositories.add_turn`, ensuring each turn is saved as it completes. Handled sink exceptions safely without impacting active calls. Added `session_started` message with `session_id` after successful auth. Added `GET /api/sessions` and `GET /api/sessions/{id}/transcript` owner-scoped endpoints.
+  - `backend/repositories.py`: Added `list_sessions_with_counts` with turn counts and user scoping.
+  - `backend/tests/test_transcript.py`, `backend/tests/test_sessions_api.py`, `backend/tests/test_turn_integration.py`: Added comprehensive unit and integration tests covering assembly, limits, timing, persistence, pagination, and ownership isolation.
+  - `frontend/src/audio/transcriptMerge.ts` & `frontend/src/audio/transcriptMerge.test.ts`: Created pure transcript merging function `mergeTranscript` fixing the user bubble fragmentation bug. Installed pinned `vitest@1.6.0` and added `npm test` to `.github/workflows/ci.yml`.
+  - `frontend/src/audio/useLiveSession.ts`: Integrated `mergeTranscript`, captured `session_id`, and added client-side AI voice mute/unmute control saved in `localStorage`.
+  - `frontend/src/components/SessionsList.tsx` & `frontend/src/components/SessionTranscriptView.tsx`: Built hash-based navigation (`#/`, `#/sessions`, `#/sessions/<id>`) for past sessions and read-only transcripts with responsive Tailwind styling, loading, empty, and error states.
+  - `frontend/src/App.tsx`: Added navigation bar tabs, voice mute/unmute button, post-call review prompt banner, and hash route views.
+- **Verification Results**:
+  - All 156 pytest backend tests passed cleanly (`python -m pytest -q`).
+  - All 8 vitest unit tests in frontend passed (`npm test`).
+  - Frontend production build passed cleanly (`npm run build`).
+- **Needs human check**:
+  - In a real call confirm words are not glued together or double spaced; if glued, change the join to insert a space between fragments.
+

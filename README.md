@@ -15,10 +15,8 @@
 - 🛡️ **Acoustic Echo Shield (Anti-Self-Interruption)**: Dynamically ducks microphone sensitivity and isolates speaker output while the AI talks, preventing laptop speakers from interrupting the AI mid-sentence.
 - ⚡ **Instant Barge-in (Interruption Handling)**: Speak with deliberate intent while the agent is talking, and the playback buffer flushes instantly.
 - 👁️ **Adaptive Motion Vision**: Smart pixel-differential analysis only transmits frames when the screen changes (saving 80% tokens & bandwidth) with a 6s heartbeat and instant manual snapshot trigger.
-- 🛠️ **Real-Time Interview Coaching Tools**: Dedicated interview tools running asynchronously without blocking conversation:
-  - 🌐 **Web Grounding**: Search for relevant technical documentation, questions, and company contexts.
-  - 📝 **Structured Notes & Memory**: Real-time candidate observation notes saved to persistent SQLite storage.
-  - 📊 **Scoring & Progress Tracking**: Instant answer scoring (0-100) and cumulative progress aggregation.
+- 🔐 **Per-user login**: Sign in with an email code (Supabase Auth). Every live call is tied to your account and stored as a session in Postgres. One live call per user at a time.
+- 🔒 **No model tools**: The AI has no shell, file, web or database access. Scoring and feedback reports are produced on the server after the call (coming in the next steps).
 - 🔄 **Context Window Compression & Resumption**: Native `SlidingWindow` compression prevents 10-minute session expiration.
 - 🎨 **Futuristic Cockpit UI**:
   - Interactive audio-reactive **Voice Orb** that pulses and shifts color dynamically (Idle, Listening, Thinking, Speaking).
@@ -43,7 +41,7 @@ flowchart TD
     subgraph Backend ["Backend (FastAPI + Async WebSockets)"]
         WS_Gateway["WebSocket Gateway (/ws/live)"]
         Tool_Dispatcher["Decoupled Async Tool Dispatcher"]
-        Database_IO["Persistent SQLite Storage (DATA_DIR)"]
+        Database_IO["Supabase Postgres (sessions, profiles)"]
         Static_Server["Static Single-Page App Server"]
     end
 
@@ -168,6 +166,27 @@ python -m pytest -q
 ```
 Tests use throw-away keys and an in-memory database. They never read your real `.env`, database or Supabase project.
 
+## 🔑 Sign-in and live-call flow
+
+1. The browser signs the user in with Supabase (email one-time code) and keeps the access token.
+2. To start a call it sends `POST /api/ws-ticket` with `Authorization: Bearer <token>` and gets a **one-time ticket** (random, valid 60 s, usable once). A browser WebSocket cannot send headers, and the long-lived token must never go into a URL, so a ticket is used instead.
+3. It opens `/ws/live` and sends `{"type":"auth","ticket":"..."}` as the first message (10 s timeout). Anything else closes the socket with code `1008` before it can take a session slot.
+4. The server checks the origin, burns the ticket, allows one live call per user, checks capacity (`1013` = busy), creates the `sessions` row **itself** (the client never chooses `session_id` or `user_id`) and starts the Gemini Live session.
+5. When the call ends the row is finalized (`ended_at`, `duration_s`, `status`) and the socket is closed with `1000`.
+
+The ticket store is in memory, so run **one backend instance** for now (see `backend/tickets.py`; Redis is the planned replacement).
+
+### Supabase setup for email sign-in
+1. *Authentication > Sign In / Providers*: **Email** enabled (it is by default).
+2. *Authentication > URL Configuration*: set **Site URL** to `http://localhost:3000` and add `http://localhost:3000`, `http://localhost:8000` (and your deployed https URL) to **Redirect URLs**.
+3. Frontend settings go in `frontend/.env` (copy `frontend/.env.example`): `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` (the *publishable* key, never the secret/service_role key). For Docker/Render these are build arguments, because Vite bakes them into the bundle.
+
+**Link or code?** By default Supabase emails a **sign-in link**: click it and you are signed in (the login screen handles this). A **6-digit code** only appears if the email template contains `{{ .Token }}`, and on the free plan templates can only be edited after you connect your own SMTP provider.
+
+**Limits of Supabase's built-in email service (fine for development only):** very few emails per hour, and it may only deliver to members of your Supabase organization, so your friends/students will not receive emails. Before real users sign up, do one of these:
+- connect a custom SMTP provider in *Authentication > Emails > SMTP Settings* (then you can also edit the template to send a code), or
+- add Google sign-in (*Authentication > Providers > Google*), which needs no email at all.
+
 ## 🌐 Cloud Deployment
 
 LivePrep is containerized and ready for zero-downtime deployment:
@@ -175,7 +194,7 @@ LivePrep is containerized and ready for zero-downtime deployment:
 ### 1. Render / Railway
 LivePrep includes [`render.yaml`](render.yaml) for automatic multi-stage Docker deployment.
 1. Connect your GitHub repository to Render / Railway.
-2. Add environment variable `GEMINI_API_KEY`.
+2. Add the environment variables: `GEMINI_API_KEY`, `GEMINI_LIVE_MODEL`, `ALLOWED_ORIGINS` (your exact https URL), `DATABASE_URL` (Supabase *Session pooler*, port 5432), `SUPABASE_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`. Run `alembic upgrade head` once against the database.
 3. Set build to Docker. The app will automatically build the React frontend and serve both the web app and WebSockets on port `8000`!
 
 ### 2. Google Cloud Run
@@ -198,11 +217,10 @@ gcloud run deploy liveprep \
 2. **Visual Screen Debugging**:
    - Click the **Screen Share** button (monitor icon) and share your code editor or browser tab.
    - Say: *"Look at my screen, what code is open right now?"* or *"Can you spot any syntax issues in this file?"*
-3. **Interview Coaching Tools**:
-   - Ask for practice questions or answer an interview prompt: LivePrep evaluates your answer and calls `score_answer`.
-   - LivePrep records observations using `save_note` and summarizes performance using `get_progress`.
-4. **Live Web Grounding**:
-   - Say: *"Search the web for common system design interview questions on distributed caching."* -> LivePrep executes `search_web` and speaks a concise digest.
+3. **Mock Interview**:
+   - Ask for practice questions or answer an interview prompt: LivePrep gives brief spoken feedback after each answer.
+4. **Sign out and back in**:
+   - Open the account menu (gear icon) and sign out. Your next visit asks for your email again and sends a new code.
 
 ---
 
@@ -214,8 +232,10 @@ LivePrep/
 │   ├── .venv/                   # Python virtual environment
 │   ├── app.py                   # FastAPI server & WebSocket live gateway
 │   ├── gemini_live.py           # Gemini 3.8 Live API bidirectional session manager
-│   ├── tools.py                 # Interview tools (search_web, save_note, score_answer, get_progress)
-│   ├── requirements.txt         # google-genai, fastapi, uvicorn, websockets, duckduckgo-search
+│   ├── auth.py                  # Supabase JWT verification
+│   ├── tickets.py               # One-time WebSocket login tickets
+│   ├── tools.py                 # Intentionally empty: the model gets no tools
+│   ├── requirements.txt         # google-genai, fastapi, uvicorn, sqlalchemy, asyncpg, pyjwt, ...
 │   └── .env.example             # Environment configuration template
 ├── frontend/
 │   ├── src/
