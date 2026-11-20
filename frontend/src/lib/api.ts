@@ -97,6 +97,66 @@ export interface SessionTranscriptResponse {
   turns: SessionTurn[];
 }
 
+export interface ReportScores {
+  fluency: number;
+  vocabulary: number;
+  grammar: number;
+  communication: number;
+  pace: number;
+  pronunciation: number | null;
+}
+
+export interface ReportData {
+  overall: number;
+  estimated_level: string;
+  scores: ReportScores;
+  summary: string;
+  strengths: string[];
+  flow: {
+    structure: string;
+    turn_taking: string;
+    answer_length: string;
+    hesitation: string;
+  };
+  grammar: {
+    mistakes: Array<{ said: string; better: string; rule: string; severity: string }>;
+    frequent_patterns: string[];
+    tips: string[];
+  };
+  vocabulary: {
+    repeated_or_basic: string[];
+    upgrades: Array<{ used: string; alternatives: string[]; example: string }>;
+  };
+  say_it_better: Array<{ original: string; improved: string; why: string }>;
+  interview_feedback: {
+    relevance: string;
+    structure: string;
+    confidence: string;
+    best_answer: string;
+    weakest_answer: string;
+    how_to_fix_weakest: string;
+  };
+  action_plan: {
+    steps: Array<{ step: number; title: string; daily_exercise: string; minutes_per_day: number }>;
+    next_session_focus: string;
+  };
+  too_short?: boolean;
+}
+
+export interface ReportResponse {
+  status: 'pending' | 'ready' | 'failed' | 'no_turns';
+  report: ReportData | null;
+  metrics: Record<string, any> | null;
+  previous: { overall: number | null; scores: Record<string, number> } | null;
+}
+
+export interface ProgressItem {
+  session_id: string;
+  date: string | null;
+  overall: number | null;
+  scores: Record<string, number>;
+}
+
 export async function fetchSessions(limit = 20, offset = 0): Promise<SessionSummary[]> {
   const res = await authFetch(`/api/sessions?limit=${limit}&offset=${offset}`);
   if (!res.ok) throw new ApiError(res.status, `Failed to load sessions (${res.status})`);
@@ -108,4 +168,26 @@ export async function fetchSessionTranscript(sessionId: string): Promise<Session
   const res = await authFetch(`/api/sessions/${sessionId}/transcript`);
   if (!res.ok) throw new ApiError(res.status, `Failed to load transcript (${res.status})`);
   return res.json();
+}
+
+export async function fetchReport(sessionId: string): Promise<ReportResponse> {
+  const res = await authFetch(`/api/sessions/${sessionId}/report`);
+  if (!res.ok) throw new ApiError(res.status, `Failed to load report (${res.status})`);
+  return res.json();
+}
+
+export async function retryReport(sessionId: string): Promise<{ status: string }> {
+  const res = await authFetch(`/api/sessions/${sessionId}/report/retry`, { method: 'POST' });
+  if (res.status === 429) {
+    throw new ApiError(429, 'Please wait a minute before retrying report generation.');
+  }
+  if (!res.ok) throw new ApiError(res.status, `Failed to retry report (${res.status})`);
+  return res.json();
+}
+
+export async function fetchProgress(): Promise<ProgressItem[]> {
+  const res = await authFetch('/api/progress');
+  if (!res.ok) throw new ApiError(res.status, `Failed to load progress trend (${res.status})`);
+  const body = await res.json();
+  return body.progress || [];
 }

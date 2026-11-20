@@ -27,7 +27,12 @@ from repositories import (
     get_turns,
     list_sessions_with_counts,
     get_session,
+    get_report,
+    get_previous_report,
+    get_progress_reports,
+    create_or_replace_report,
 )
+from report_service import schedule_report_generation, can_retry_report
 from tickets import TicketStore, TicketLimitError
 
 load_dotenv()
@@ -272,6 +277,117 @@ async def get_session_transcript(
     }
 
 
+# --------------------------------------------------------------------------- #
+# /api/sessions/{id}/report  &  /api/progress
+# --------------------------------------------------------------------------- #
+
+@app.get("/api/sessions/{session_id}/report")
+async def get_session_report(
+    session_id: str,
+    user: AuthenticatedUser = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Retrieve the post-session report. Returns status, report, metrics, and previous scores."""
+    try:
+        sid = uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    session = await get_session(db, user_id=user.user_id, session_id=sid)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    report = await get_report(db, user_id=user.user_id, session_id=sid)
+    if report is None:
+        # Check if session has user turns; if so, schedule generation
+        turns = await get_turns(db, user_id=user.user_id, session_id=sid)
+        has_user_turns = any(t.speaker == "user" for t in turns)
+        if has_user_turns:
+            schedule_report_generation(user.user_id, sid)
+            return {"status": "pending", "report": None, "metrics": None, "previous": None}
+        return {"status": "no_turns", "report": None, "metrics": None, "previous": None}
+
+    # Stale pending check (> 10 minutes)
+    status_val = report.status
+    if status_val == "pending" and report.created_at:
+        now = datetime.datetime.now(datetime.timezone.utc)
+        if (now - report.created_at).total_seconds() > 600:
+            status_val = "failed"
+            report.status = "failed"
+            report.error_code = "stale_pending"
+            await db.commit()
+
+    report_data = None
+    if report.report_json:
+        try:
+            report_data = json.loads(report.report_json)
+        except Exception:
+            pass
+
+    metrics_data = None
+    if report.metrics_json:
+        try:
+            metrics_data = json.loads(report.metrics_json)
+        except Exception:
+            pass
+
+    # Previous session comparison
+    previous_data = None
+    prev_report = await get_previous_report(db, user_id=user.user_id, current_session_id=sid)
+    if prev_report and prev_report.report_json:
+        try:
+            prev_parsed = json.loads(prev_report.report_json)
+            previous_data = {
+                "overall": prev_parsed.get("overall"),
+                "scores": prev_parsed.get("scores", {}),
+            }
+        except Exception:
+            pass
+
+    return {
+        "status": status_val,
+        "report": report_data,
+        "metrics": metrics_data,
+        "previous": previous_data,
+    }
+
+
+@app.post("/api/sessions/{session_id}/report/retry")
+async def retry_session_report(
+    session_id: str,
+    user: AuthenticatedUser = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Retries generation of a failed or pending report. Rate limited to once per 60s."""
+    try:
+        sid = uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    session = await get_session(db, user_id=user.user_id, session_id=sid)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if not can_retry_report(sid):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Please wait 60 seconds before retrying report generation.",
+        )
+
+    schedule_report_generation(user.user_id, sid)
+    return {"status": "pending"}
+
+
+@app.get("/api/progress")
+async def get_user_progress(
+    user: AuthenticatedUser = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Returns the last 10 ready reports for the candidate's trend chart."""
+    items = await get_progress_reports(db, user_id=user.user_id, limit=10)
+    return {"progress": items}
+
+
 @app.post("/api/ws-ticket")
 async def create_ws_ticket(user: AuthenticatedUser = Depends(current_user)):
     """Issues a single-use ticket (valid ~60 s) that the browser sends as its first WebSocket message."""
@@ -480,6 +596,8 @@ async def websocket_live_endpoint(websocket: WebSocket):
                     _close_session_record(user_id, session_id, time.monotonic() - started, outcome)
                 )
                 logger.info("Session %s ended (%s)", session_id, outcome)
+                # Trigger post-session report generation in background
+                schedule_report_generation(user_id, session_id)
                 # Tell the client the call is over (normal closure), after the record is saved.
                 try:
                     await websocket.close(code=1000)

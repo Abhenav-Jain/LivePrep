@@ -91,6 +91,7 @@ class Session(Base):
     status: Mapped[str] = mapped_column(String(50), default="active", nullable=False)
 
     turns: Mapped[list["Turn"]] = relationship("Turn", back_populates="session", cascade="all, delete-orphan")
+    report: Mapped[Optional["Report"]] = relationship("Report", back_populates="session", uselist=False, cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("idx_sessions_user_id", "user_id"),
@@ -117,4 +118,32 @@ class Turn(Base):
         Index("idx_turns_user_id", "user_id"),
         Index("idx_turns_session_idx", "session_id", "idx"),
         UniqueConstraint("session_id", "idx", name="uq_turns_session_idx"),
+    )
+
+
+class Report(Base):
+    __tablename__ = "reports"
+
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        GUID, ForeignKey("sessions.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(GUID, nullable=False)
+    status: Mapped[str] = mapped_column(String(50), default="pending", nullable=False)  # pending | ready | failed
+    rubric_version: Mapped[str] = mapped_column(String(20), default="1.0", nullable=False)
+    metrics_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    report_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc)
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.datetime.now(datetime.timezone.utc),
+        onupdate=lambda: datetime.datetime.now(datetime.timezone.utc),
+    )
+
+    session: Mapped["Session"] = relationship("Session", back_populates="report")
+
+    __table_args__ = (
+        Index("idx_reports_user_id", "user_id"),
     )
