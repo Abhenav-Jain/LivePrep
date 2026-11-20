@@ -3,7 +3,7 @@ import datetime
 from typing import Optional, List, Dict, Any
 from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from models import Session, Turn, Profile
+from models import Session, Turn, Profile, Report
 
 
 async def create_session(
@@ -164,7 +164,9 @@ async def list_sessions_with_counts(
     )
     res = await db.execute(stmt)
     rows = []
+    session_ids = []
     for session, turn_count in res.all():
+        session_ids.append(session.id)
         rows.append({
             "id": str(session.id),
             "scenario": session.scenario,
@@ -173,11 +175,35 @@ async def list_sessions_with_counts(
             "ended_at": session.ended_at.isoformat() if session.ended_at else None,
             "duration_s": session.duration_s,
             "turn_count": turn_count or 0,
-            # Step 6 fields (null until reports table exists)
             "report_status": None,
             "overall_score": None,
         })
+
+    # One extra query for the whole page (portable: no JSON operators in SQL).
+    if session_ids:
+        rep_res = await db.execute(
+            select(Report.session_id, Report.status, Report.report_json).where(
+                and_(Report.user_id == user_id, Report.session_id.in_(session_ids))
+            )
+        )
+        by_id = {str(rid): (status_value, report_json) for rid, status_value, report_json in rep_res.all()}
+        for row in rows:
+            status_value, report_json = by_id.get(row["id"], (None, None))
+            row["report_status"] = status_value
+            row["overall_score"] = _overall_from_report(report_json)
     return rows
+
+
+def _overall_from_report(report_json: Optional[dict]) -> Optional[int]:
+    """Overall score from a stored report, or None (too short / not ready)."""
+    if not isinstance(report_json, dict):
+        return None
+    scores = report_json.get("scores")
+    if isinstance(scores, dict):
+        overall = scores.get("overall")
+        if isinstance(overall, (int, float)):
+            return int(overall)
+    return None
 
 
 async def finish_session(
@@ -201,3 +227,114 @@ async def finish_session(
     sess.status = status
     await db.flush()
     return True
+
+
+# --------------------------------------------------------------------------- #
+# Reports (Step 6)
+# --------------------------------------------------------------------------- #
+async def get_report(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    session_id: uuid.UUID,
+) -> Optional[Report]:
+    """Report strictly owned by user_id, or None."""
+    stmt = select(Report).where(
+        and_(Report.session_id == session_id, Report.user_id == user_id)
+    )
+    res = await db.execute(stmt)
+    return res.scalar_one_or_none()
+
+
+async def upsert_report(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    session_id: uuid.UUID,
+    status: str,
+    rubric_version: Optional[str] = None,
+    metrics: Optional[dict] = None,
+    report: Optional[dict] = None,
+    error: Optional[str] = None,
+) -> Report:
+    """Creates or replaces the report row for a session. Idempotent by design."""
+    row = await get_report(db, user_id=user_id, session_id=session_id)
+    if row is None:
+        row = Report(session_id=session_id, user_id=user_id)
+        db.add(row)
+    row.status = status
+    row.rubric_version = rubric_version
+    row.metrics_json = metrics
+    row.report_json = report
+    row.error = error
+    row.updated_at = datetime.datetime.now(datetime.timezone.utc)
+    await db.flush()
+    return row
+
+
+async def get_previous_ready_report(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    before_started_at: Optional[datetime.datetime],
+) -> Optional[dict]:
+    """The most recent earlier ready report for the same user (for deltas), or None."""
+    if before_started_at is None:
+        return None
+    stmt = (
+        select(Report.report_json)
+        .join(Session, Session.id == Report.session_id)
+        .where(
+            and_(
+                Report.user_id == user_id,
+                Report.status == "ready",
+                Session.user_id == user_id,
+                Session.started_at < before_started_at,
+            )
+        )
+        .order_by(Session.started_at.desc())
+        .limit(1)
+    )
+    res = await db.execute(stmt)
+    row = res.first()
+    if row is None or not isinstance(row[0], dict):
+        return None
+    return row[0]
+
+
+async def list_progress_reports(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    limit: int = 10,
+) -> List[Dict[str, Any]]:
+    """Scores of the user's most recent ready reports, newest first."""
+    stmt = (
+        select(Session.id, Session.started_at, Session.scenario, Report.report_json)
+        .join(Report, Report.session_id == Session.id)
+        .where(
+            and_(
+                Session.user_id == user_id,
+                Report.user_id == user_id,
+                Report.status == "ready",
+            )
+        )
+        .order_by(Session.started_at.desc())
+        .limit(limit)
+    )
+    res = await db.execute(stmt)
+    out: List[Dict[str, Any]] = []
+    for session_id, started_at, scenario, report_json in res.all():
+        scores = (report_json or {}).get("scores") if isinstance(report_json, dict) else None
+        if not isinstance(scores, dict):
+            continue  # too-short reports have no scores and do not belong on the trend
+        out.append({
+            "session_id": str(session_id),
+            "scenario": scenario,
+            "started_at": started_at.isoformat() if started_at else None,
+            "scores": {
+                "overall": scores.get("overall"),
+                "fluency": scores.get("fluency"),
+                "vocabulary": scores.get("vocabulary"),
+                "grammar": scores.get("grammar"),
+                "communication": scores.get("communication"),
+                "pace": scores.get("pace"),
+            },
+        })
+    return out

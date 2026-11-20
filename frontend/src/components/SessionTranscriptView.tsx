@@ -1,15 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, MessageSquare, AlertCircle, RefreshCw, User, Bot } from 'lucide-react';
+import { ArrowLeft, MessageSquare, AlertCircle, RefreshCw, User, Bot, Sparkles } from 'lucide-react';
 import { fetchSessionTranscript, SessionTranscriptResponse, describeApiError } from '../lib/api';
 
 interface SessionTranscriptViewProps {
   sessionId: string;
   onBack: () => void;
+  onOpenReport?: (id: string) => void;
 }
 
 export const SessionTranscriptView: React.FC<SessionTranscriptViewProps> = ({
   sessionId,
   onBack,
+  onOpenReport,
 }) => {
   const [data, setData] = useState<SessionTranscriptResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -73,14 +75,25 @@ export const SessionTranscriptView: React.FC<SessionTranscriptViewProps> = ({
           </div>
         </div>
 
-        <button
-          onClick={load}
-          disabled={loading}
-          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-surface border border-slate-800 hover:border-slate-700 text-xs text-slate-300 hover:text-white transition-colors disabled:opacity-50"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          <span>Refresh</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {onOpenReport && (
+            <button
+              onClick={() => onOpenReport(sessionId)}
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-primary/15 hover:bg-primary/25 text-xs font-medium text-primary-glow border border-primary/30 transition-colors"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>View Report</span>
+            </button>
+          )}
+          <button
+            onClick={load}
+            disabled={loading}
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-surface border border-slate-800 hover:border-slate-700 text-xs text-slate-300 hover:text-white transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
+          </button>
+        </div>
       </div>
 
       {loading && (

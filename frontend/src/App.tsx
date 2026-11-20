@@ -15,6 +15,7 @@ import {
   Volume2,
   VolumeX,
   History,
+  TrendingUp,
 } from 'lucide-react';
 import { useLiveSession } from './audio/useLiveSession';
 import { useAuth } from './auth/AuthProvider';
@@ -25,6 +26,8 @@ import { ToolActivityCard } from './components/ToolActivityCard';
 import { SettingsModal } from './components/SettingsModal';
 import { SessionsList } from './components/SessionsList';
 import { SessionTranscriptView } from './components/SessionTranscriptView';
+import { ReportView } from './components/ReportView';
+import { ProgressView } from './components/ProgressView';
 
 export const App: React.FC = () => {
   const {
@@ -98,7 +101,12 @@ export const App: React.FC = () => {
 
   // Determine current page
   const isSessionsList = route === '#/sessions';
-  const isTranscriptView = route.startsWith('#/sessions/') && !route.endsWith('/report');
+  const isProgressView = route === '#/progress';
+  const isReportView = route.startsWith('#/sessions/') && route.endsWith('/report');
+  const reportSessionId = isReportView
+    ? route.replace('#/sessions/', '').replace('/report', '')
+    : null;
+  const isTranscriptView = route.startsWith('#/sessions/') && !isReportView;
   const transcriptSessionId = isTranscriptView
     ? route.replace('#/sessions/', '').split('/')[0]
     : null;
@@ -153,11 +161,24 @@ export const App: React.FC = () => {
             <History className="w-3.5 h-3.5" />
             <span>Past Sessions</span>
           </button>
+          <button
+            onClick={() => {
+              window.location.hash = '#/progress';
+            }}
+            className={`flex items-center space-x-1.5 px-3 py-1 rounded-lg font-medium transition-colors ${
+              isProgressView
+                ? 'bg-primary text-white shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <TrendingUp className="w-3.5 h-3.5" />
+            <span>Progress</span>
+          </button>
         </nav>
 
         <div className="flex items-center space-x-2 sm:space-x-3">
           {/* Main Quick Action Header Power Button (only shown in live view) */}
-          {!route.startsWith('#/sessions') && (
+          {!route.startsWith('#/sessions') && !isProgressView && (
             <button
               onClick={handleToggleConnect}
               className={`flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl font-bold text-xs transition-all shadow-md ${
@@ -227,28 +248,60 @@ export const App: React.FC = () => {
       </header>
 
       {/* Post-Call Banner (if session recently ended and has a session_id) */}
-      {status === 'disconnected' && sessionId && !route.startsWith('#/sessions') && (
-        <div className="bg-primary/10 border-b border-primary/20 px-4 py-2.5 flex items-center justify-between text-xs text-blue-200 z-10">
-          <span>Interview call ended. Would you like to review your transcript?</span>
-          <button
-            onClick={() => {
-              window.location.hash = `#/sessions/${sessionId}`;
-            }}
-            className="px-3 py-1 rounded-lg bg-primary hover:bg-primary-hover text-white font-semibold transition-colors shadow-sm"
-          >
-            View Transcript &rarr;
-          </button>
+      {status === 'disconnected' && sessionId && route === '#/' && (
+        <div className="bg-primary/10 border-b border-primary/20 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs text-blue-200 z-10">
+          <span>Interview call ended. Your report is being prepared.</span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                window.location.hash = `#/sessions/${sessionId}`;
+              }}
+              className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium border border-slate-700/60 transition-colors"
+            >
+              Transcript
+            </button>
+            <button
+              onClick={() => {
+                window.location.hash = `#/sessions/${sessionId}/report`;
+              }}
+              className="px-3 py-1 rounded-lg bg-primary hover:bg-primary-hover text-white font-semibold transition-colors shadow-sm"
+            >
+              View Report &rarr;
+            </button>
+          </div>
         </div>
       )}
 
       {/* Route Views */}
-      {isSessionsList ? (
+      {isProgressView ? (
+        <ProgressView
+          onBack={() => {
+            window.location.hash = '#/';
+          }}
+          onOpenReport={(id) => {
+            window.location.hash = `#/sessions/${id}/report`;
+          }}
+        />
+      ) : isSessionsList ? (
         <SessionsList
           onSelectSession={(id) => {
             window.location.hash = `#/sessions/${id}`;
           }}
+          onOpenReport={(id) => {
+            window.location.hash = `#/sessions/${id}/report`;
+          }}
           onBackToCall={() => {
             window.location.hash = '#/';
+          }}
+        />
+      ) : isReportView && reportSessionId ? (
+        <ReportView
+          sessionId={reportSessionId}
+          onBack={() => {
+            window.location.hash = '#/sessions';
+          }}
+          onOpenTranscript={(id) => {
+            window.location.hash = `#/sessions/${id}`;
           }}
         />
       ) : isTranscriptView && transcriptSessionId ? (
@@ -256,6 +309,9 @@ export const App: React.FC = () => {
           sessionId={transcriptSessionId}
           onBack={() => {
             window.location.hash = '#/sessions';
+          }}
+          onOpenReport={(id) => {
+            window.location.hash = `#/sessions/${id}/report`;
           }}
         />
       ) : (

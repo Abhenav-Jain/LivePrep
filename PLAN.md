@@ -14,10 +14,11 @@ How to work: follow `AGENT_CONTEXT.md`. Execute steps strictly in order, one ste
 | 1 | Remove dangerous tools, non-root Docker | DONE |
 | 2 | Deploy config and secrets | DONE |
 | 3 | Stability fixes | DONE (12 tests pass) |
-| 3B | Follow-ups from review | TODO (next) |
-| 4 | Auth (Supabase) + Postgres | TODO |
-| 5 | Transcripts and storage | TODO |
-| 6 | Reports | TODO |
+| 3B | Follow-ups from review | DONE (except the audioop-fallback test) |
+| 4 | Auth (Supabase) + Postgres | DONE (4.1 DB, 4.2 JWT/API, 4A/4B bundled into the Step 5 commit) |
+| 5 | Transcripts and storage | DONE (157 tests, 8 vitest, build green on 20 Nov 2026) |
+| 6 | Reports | DONE (metrics, rubric v1, report/progress endpoints + UI, 185 backend tests) |
+| 7 | Personalization | TODO (next) |
 | 7 | Personalization | TODO |
 | 8 | Demo-ready cleanup | TODO |
 | 9-16 | Production improvements (Phase 2) | TODO, after the demo |

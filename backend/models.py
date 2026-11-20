@@ -4,6 +4,7 @@ import datetime
 from typing import Optional
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy import (
+    JSON,
     String,
     Text,
     Integer,
@@ -91,9 +92,44 @@ class Session(Base):
     status: Mapped[str] = mapped_column(String(50), default="active", nullable=False)
 
     turns: Mapped[list["Turn"]] = relationship("Turn", back_populates="session", cascade="all, delete-orphan")
+    report: Mapped[Optional["Report"]] = relationship(
+        "Report", cascade="all, delete-orphan", uselist=False
+    )
 
     __table_args__ = (
         Index("idx_sessions_user_id", "user_id"),
+    )
+
+
+class Report(Base):
+    """Post-session report (Step 6). One row per session; re-running replaces it.
+
+    ``metrics_json`` holds objective, code-computed numbers. ``report_json`` holds the
+    validated analysis (scores, strengths, mistakes, action plan). Both are JSON so the
+    rubric can evolve without a migration; ``rubric_version`` records which rubric made it.
+    """
+    __tablename__ = "reports"
+
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        GUID, ForeignKey("sessions.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(GUID, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    rubric_version: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    metrics_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    report_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc)
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.datetime.now(datetime.timezone.utc),
+        onupdate=lambda: datetime.datetime.now(datetime.timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("idx_reports_user_id", "user_id"),
     )
 
 

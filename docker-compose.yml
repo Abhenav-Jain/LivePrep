@@ -16,6 +16,8 @@ services:
       - DATABASE_URL=${DATABASE_URL:-}
       - SUPABASE_URL=${SUPABASE_URL:-}
       - SUPABASE_JWT_AUDIENCE=${SUPABASE_JWT_AUDIENCE:-authenticated}
+      - REPORT_MODEL=${REPORT_MODEL:-}
+      - REPORT_AUTO_GENERATE=${REPORT_AUTO_GENERATE:-1}
       - HOST=0.0.0.0
       - PORT=8000
     restart: unless-stopped

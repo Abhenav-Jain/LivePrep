@@ -176,6 +176,35 @@ Tests use throw-away keys and an in-memory database. They never read your real `
 
 The ticket store is in memory, so run **one backend instance** for now (see `backend/tickets.py`; Redis is the planned replacement).
 
+---
+
+## 📊 Post-session reports
+
+When a call ends, the server stores the session and queues a **report job** for it:
+
+1. `backend/reports.py` computes objective metrics in plain Python: user words, speaking time, WPM, average and longest pause, fillers (approximate), type-token ratio, unique words, most repeated words and average answer length.
+2. If the candidate spoke fewer than 30 words, no model is called: the report is stored as `ready` with guidance instead of fake scores.
+3. Otherwise the transcript, metrics and profile are sent to the text model in `REPORT_MODEL` with the fixed rubric `v1`. The answer must be valid JSON for a strict schema (scores 0-100, exactly 3 strengths, exactly 5 action steps); an invalid answer is retried once, then the report is stored as `failed`.
+4. The result lands in the `reports` table (`pending` -> `ready` / `failed`), owner-scoped like every other query. Re-running the job replaces the row.
+
+Endpoints (all require `Authorization: Bearer <token>` and filter by the token's user id):
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/sessions/{id}/report` | `pending`, `ready` (with analysis) or `failed`, plus the previous session's scores for deltas |
+| POST | `/api/sessions/{id}/report/retry` | Regenerate a missing/failed report (idempotent) |
+| GET | `/api/progress?limit=10` | Scores of the latest ready reports, for the trend chart |
+
+UI: `#/sessions/<id>/report` shows the overall score, five skill scores, objective metrics, strengths, grammar fixes, words to upgrade, interview feedback and the 5-step action plan; `#/progress` shows the score trend and skill averages.
+
+**Honesty rules built into the rubric**
+- `pronunciation` is always `null` with "Audio-based pronunciation analysis coming soon" (audio is not stored yet; a real score needs Step 12).
+- The filler metric is labelled *approximate*: transcription can miss fillers.
+- Hindi/Hinglish code-switching is not penalised as a grammar error, only mentioned.
+- Transcript and profile text are treated as untrusted data: sanitised, wrapped in delimiters, and the prompt instructs the model to ignore instructions inside them.
+
+**Setup**: run `alembic upgrade head` to create the `reports` table, and set `REPORT_MODEL` (for example `gemini-2.5-flash`). `REPORT_AUTO_GENERATE=0` disables automatic generation (used by the test suite); `REPORT_LLM_TIMEOUT_SECONDS` (default 45) bounds one model call.
+
 ### Supabase setup for email sign-in
 1. *Authentication > Sign In / Providers*: **Email** enabled (it is by default).
 2. *Authentication > URL Configuration*: set **Site URL** to `http://localhost:3000` and add `http://localhost:3000`, `http://localhost:8000` (and your deployed https URL) to **Redirect URLs**.
@@ -194,7 +223,7 @@ LivePrep is containerized and ready for zero-downtime deployment:
 ### 1. Render / Railway
 LivePrep includes [`render.yaml`](render.yaml) for automatic multi-stage Docker deployment.
 1. Connect your GitHub repository to Render / Railway.
-2. Add the environment variables: `GEMINI_API_KEY`, `GEMINI_LIVE_MODEL`, `ALLOWED_ORIGINS` (your exact https URL), `DATABASE_URL` (Supabase *Session pooler*, port 5432), `SUPABASE_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`. Run `alembic upgrade head` once against the database.
+2. Add the environment variables: `GEMINI_API_KEY`, `GEMINI_LIVE_MODEL`, `REPORT_MODEL`, `ALLOWED_ORIGINS` (your exact https URL), `DATABASE_URL` (Supabase *Session pooler*, port 5432), `SUPABASE_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`. Run `alembic upgrade head` once against the database.
 3. Set build to Docker. The app will automatically build the React frontend and serve both the web app and WebSockets on port `8000`!
 
 ### 2. Google Cloud Run
@@ -233,6 +262,7 @@ LivePrep/
 │   ├── app.py                   # FastAPI server & WebSocket live gateway
 │   ├── gemini_live.py           # Gemini 3.8 Live API bidirectional session manager
 │   ├── auth.py                  # Supabase JWT verification
+│   ├── reports.py               # Step 6: metrics, rubric prompt, report pipeline
 │   ├── tickets.py               # One-time WebSocket login tickets
 │   ├── tools.py                 # Intentionally empty: the model gets no tools
 │   ├── requirements.txt         # google-genai, fastapi, uvicorn, sqlalchemy, asyncpg, pyjwt, ...

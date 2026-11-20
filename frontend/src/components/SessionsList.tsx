@@ -1,14 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, Clock, MessageSquare, AlertCircle, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Clock, MessageSquare, AlertCircle, RefreshCw, Sparkles } from 'lucide-react';
 import { fetchSessions, SessionSummary, describeApiError } from '../lib/api';
 
 interface SessionsListProps {
   onSelectSession: (id: string) => void;
+  onOpenReport: (id: string) => void;
   onBackToCall: () => void;
 }
-
 export const SessionsList: React.FC<SessionsListProps> = ({
   onSelectSession,
+  onOpenReport,
   onBackToCall,
 }) => {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -151,11 +152,32 @@ export const SessionsList: React.FC<SessionsListProps> = ({
               </div>
 
               <div className="flex items-center space-x-2">
+                {s.report_status === 'ready' && s.overall_score !== null && s.overall_score !== undefined && (
+                  <span
+                    className={`text-sm font-bold tabular-nums px-2 py-0.5 rounded-lg border ${
+                      s.overall_score >= 75
+                        ? 'text-emerald-300 bg-emerald-950/40 border-emerald-800/50'
+                        : s.overall_score >= 50
+                        ? 'text-amber-300 bg-amber-950/40 border-amber-800/50'
+                        : 'text-rose-300 bg-rose-950/40 border-rose-800/50'
+                    }`}
+                    title="Overall report score"
+                  >
+                    {Math.round(s.overall_score)}
+                  </span>
+                )}
                 <button
                   onClick={() => onSelectSession(s.id)}
                   className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 transition-colors border border-slate-700/60"
                 >
-                  View Transcript
+                  Transcript
+                </button>
+                <button
+                  onClick={() => onOpenReport(s.id)}
+                  className="flex items-center space-x-1 px-3.5 py-1.5 rounded-lg bg-primary/15 hover:bg-primary/25 text-xs font-medium text-primary-glow transition-colors border border-primary/30"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  <span>{s.report_status === 'failed' ? 'Retry report' : 'Report'}</span>
                 </button>
               </div>
             </div>

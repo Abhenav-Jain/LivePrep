@@ -72,6 +72,20 @@
 - **Needs human check**:
   - None for Part 4.1 (database foundations verified against live database).
 
+## Step 3B: Follow-ups From the Review of Steps 1 to 3
+- **Status**: Completed (one item still missing, see below)
+- **Evidence in code**: auth-before-semaphore with `AUTH_TIMEOUT_SECONDS` (see fix section), `backend/requirements-dev.txt` and `.github/workflows/ci.yml`, `python:3.12-slim` runner stage in `Dockerfile`, `AUDIO_SILENCE_RMS_THRESHOLD=100` and `IDLE_WARNING_SECONDS=30` with client `idle_warning` banner.
+- **Still missing**: `PLAN.md` 3B item 6 asks for a test proving the pure-Python RMS fallback equals `audioop.rms`; no such test exists yet (`_calculate_audio_rms` has the fallback).
+
+## Step 4.2: Supabase JWT Verification, /api/me, Profile Endpoints, CI
+- **Status**: Completed
+- **Branch**: `step4-2-jwt-auth-and-profile` (Merged into `main`)
+- **Files Changed**: `backend/auth.py` (JWKS-based ES256/RS256 verification, algorithm allowlist, `kid`-based key cache, issuer/audience/expiry checks), `backend/app.py` (`GET /api/me`, `PUT /api/me/profile`), `backend/tests/test_auth.py`, `backend/tests/test_profile.py`, `backend/tests/conftest.py`, `backend/pytest.ini`, `backend/requirements-dev.txt`, `.github/workflows/ci.yml`, `README.md`, `backend/.env.example`, `render.yaml`, `docker-compose.yml`.
+- **Commit note**: Steps 4A (ticket store, `/api/ws-ticket`, websocket auth, tools removal, one-active-session-per-user) and 4B (frontend login, auth gate, ticket flow) were implemented but committed inside `8a170fd` ("Step 5: Transcripts..."), so `git log` does not show them as their own step.
+- **Verification Results** (re-run 20 Nov 2026 on a clean checkout):
+  - Backend: 157 pytest tests pass (`python -m pytest -q`).
+  - Frontend: 8 vitest tests pass (`npm test`); `npm run build` passes.
+
 ## Step 5: Transcripts and Storage
 - **Status**: Completed
 - **Branch**: `step5-transcripts-storage`
@@ -92,3 +106,56 @@
 - **Needs human check**:
   - In a real call confirm words are not glued together or double spaced; if glued, change the join to insert a space between fragments.
 
+
+## Step 6: Post-Session Report and Report Page
+- **Status**: Completed
+- **Branch**: `freebuff/8c9902527b678388fadf49c4` (cloud workspace branch; the plan's `step6-reports` branch name was not used because the workspace is bound to this branch)
+- **Decisions**:
+  - `overall` is computed **server-side** as a weighted mean of the five skills (fluency 20%, vocabulary 20%, grammar 20%, communication 25%, pace 15%). The model never supplies it, so it cannot be inflated and stays consistent across sessions.
+  - `REPORT_MODEL` is required config (no hardcoded model name). Without it, generation stores `failed` with a clear message instead of pretending.
+  - Automatic generation is queued as an `asyncio` task after the session row is finalized; `REPORT_AUTO_GENERATE=0` disables it (the test suite sets this so live-flow tests never call the network).
+  - The LLM call never holds a DB connection: inputs are read in one short session, the model runs outside any transaction, the result is written in another short session.
+  - Short sessions (< 30 user words) skip the model entirely and return guidance with `too_short: true`.
+  - The retry endpoint is synchronous (user-triggered, returns the final stored status); automatic generation is asynchronous.
+  - Fillers are labelled approximate and pronunciation stays `null` ("coming soon"), per the honesty constraint.
+- **Files Changed**:
+  - `backend/models.py`: new `Report` model (session_id PK/FK cascade, user_id, status, rubric_version, `metrics_json`, `report_json`, error, timestamps, index on user_id) and `Session.report` relationship.
+  - `backend/migrations/versions/9c1f4b7a2d10_create_reports_table.py`: creates `reports` with cascade FK, index and RLS enabled.
+  - `backend/reports.py`: `compute_metrics`, `build_report_prompt` (sanitising + delimiters + injection defence), Pydantic `ReportAnalysis` schema, JSON-mode Gemini call with one retry, `run_report_pipeline` (pending -> ready/failed, idempotent), too-short report.
+  - `backend/repositories.py`: `get_report`, `upsert_report`, `get_previous_ready_report`, `list_progress_reports`; session list now exposes `report_status` and `overall_score` (one extra query per page, portable across SQLite/Postgres).
+  - `backend/app.py`: `GET /api/sessions/{id}/report`, `POST /api/sessions/{id}/report/retry`, `GET /api/progress`, report queue/scheduler, report scheduled after every call.
+  - `backend/.env.example`, `render.yaml`, `docker-compose.yml`, `README.md`: `REPORT_MODEL`, `REPORT_AUTO_GENERATE`, `REPORT_LLM_TIMEOUT_SECONDS`, migration and architecture notes.
+  - `frontend/src/lib/api.ts`: report/progress types and calls.
+  - `frontend/src/components/ReportCharts.tsx`: `ScoreRing`, `ScoreBar` (with deltas), `TrendChart` (dependency-free SVG).
+  - `frontend/src/components/ReportView.tsx`: pending polling, failed + retry, too-short state, overall ring, CEFR badge, five score cards + pronunciation "soon", objective metrics, strengths, interview feedback, grammar fixes, words to upgrade, 5-step checklist.
+  - `frontend/src/components/ProgressView.tsx`: overall trend chart, best/latest/change, skill averages, recent reports.
+  - `frontend/src/App.tsx`, `SessionsList.tsx`, `SessionTranscriptView.tsx`: `#/sessions/<id>/report` and `#/progress` routes, nav tab, post-call banner with report link, score badges.
+  - Tests: `backend/tests/test_report_metrics.py`, `test_report_pipeline.py`, `test_reports_api.py`; `backend/tests/conftest.py` sets `REPORT_AUTO_GENERATE=0`.
+- **Verification Results** (20 Nov 2026):
+  - Backend: `cd backend && python -m pytest -q` -> **185 passed** (157 before Step 6).
+  - Frontend: `npm test` -> **8 passed**; `npm run build` (`tsc && vite build`) -> **passed**.
+  - `alembic heads` -> `9c1f4b7a2d10 (head)`; the migration itself has **not** been applied to a live database from this workspace.
+  - Tests cover: metrics on fixed transcripts, WPM/pauses/fillers/TTR, <30-word short path, model failure -> `failed`, unconfigured model, one retry on invalid output, idempotent regeneration, out-of-range/wrong-length rejection, prompt-injection transcript neutralisation, ownership 404s (identical for foreign/missing/invalid), pending/ready/failed API states, previous-score deltas, retry, progress scoping, and the auto-generation scheduler.
+- **Sample generated report JSON** (shape produced by `_assemble_report`, abbreviated):
+```json
+{
+  "rubric_version": "v1",
+  "too_short": false,
+  "scores": {"fluency": 62, "vocabulary": 58, "grammar": 55, "communication": 70, "pace": 64, "pronunciation": null, "overall": 62},
+  "estimated_cefr": "B1",
+  "summary": "You answered the behavioural question with a clear story and good detail. Keep results explicit and slow down slightly when you list technical steps.",
+  "strengths": ["Clear STAR structure in the project answer", "Confident, natural opening", "Good use of concrete examples"],
+  "grammar_mistakes": [{"said": "I have went to the client", "better": "I went to the client", "rule": "Use past simple, not present perfect, with a finished time."}],
+  "words_to_upgrade": [{"used": "good", "alternatives": ["strong", "effective", "solid"]}],
+  "interview_feedback": {"relevance": 78, "structure": 72, "confidence": 66, "comments": "Answers were relevant; make the Result of each story measurable."},
+  "action_plan": [{"step": "Add a measurable result to every story", "daily_exercise": "Rewrite one project story with a number in the result."}],
+  "next_session_focus": "Make every project story end with a measurable result.",
+  "metrics": {"user_word_count": 212, "words_per_minute": 90.1, "filler_count": 14, "avg_pause_s": 1.8},
+  "notes": {"pronunciation": "Audio-based pronunciation analysis coming soon.", "filler": "Approximate: transcription can miss filler words."}
+}
+```
+- **Needs human check**:
+  - Run `alembic upgrade head` against the Supabase database (creates `reports`; RLS enabled) and set `REPORT_MODEL` (for example `gemini-2.5-flash`).
+  - Complete a real call and confirm the report appears after ~10-40 s, the browser tab title/labels are correct, and scores feel fair.
+  - Check a session with background noise / Hinglish to confirm fillers and code-switching are treated sensibly.
+  - Confirm report retry on a model failure works in the deployed environment.

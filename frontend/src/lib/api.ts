@@ -109,3 +109,120 @@ export async function fetchSessionTranscript(sessionId: string): Promise<Session
   if (!res.ok) throw new ApiError(res.status, `Failed to load transcript (${res.status})`);
   return res.json();
 }
+
+// --------------------------------------------------------------------------- //
+// Reports (Step 6)
+// --------------------------------------------------------------------------- //
+export interface ReportScores {
+  fluency: number;
+  vocabulary: number;
+  grammar: number;
+  communication: number;
+  pace: number;
+  pronunciation: number | null;
+  overall: number;
+}
+
+export interface ReportMetrics {
+  user_word_count: number;
+  agent_word_count: number;
+  user_turn_count: number;
+  total_turn_count: number;
+  session_duration_s: number | null;
+  user_speaking_s: number;
+  words_per_minute: number | null;
+  pause_count: number;
+  avg_pause_s: number | null;
+  longest_pause_s: number | null;
+  filler_count: number;
+  filler_breakdown: Record<string, number>;
+  unique_word_count: number;
+  type_token_ratio: number | null;
+  top_repeated_words: { word: string; count: number }[];
+  avg_turn_length_words: number | null;
+  approximate: { filler: boolean; pronunciation: string };
+}
+
+export interface GrammarMistake {
+  said: string;
+  better: string;
+  rule: string;
+}
+
+export interface WordUpgrade {
+  used: string;
+  alternatives: string[];
+}
+
+export interface InterviewFeedback {
+  relevance: number;
+  structure: number;
+  confidence: number;
+  comments: string;
+}
+
+export interface ActionStep {
+  step: string;
+  daily_exercise: string;
+}
+
+export interface ReportAnalysis {
+  rubric_version: string;
+  too_short: boolean;
+  scores: ReportScores | null;
+  estimated_cefr: string | null;
+  summary: string;
+  strengths: string[];
+  grammar_mistakes: GrammarMistake[];
+  words_to_upgrade: WordUpgrade[];
+  interview_feedback: InterviewFeedback | null;
+  action_plan: ActionStep[];
+  next_session_focus: string;
+  metrics?: ReportMetrics;
+  notes?: { pronunciation?: string; filler?: string };
+}
+
+export interface ReportResponse {
+  session_id: string;
+  status: 'pending' | 'ready' | 'failed';
+  rubric_version: string;
+  metrics: ReportMetrics | null;
+  report: ReportAnalysis | null;
+  error: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  previous: { scores: Partial<ReportScores> } | null;
+}
+
+export interface ProgressEntry {
+  session_id: string;
+  scenario: string | null;
+  started_at: string | null;
+  scores: {
+    overall: number | null;
+    fluency: number | null;
+    vocabulary: number | null;
+    grammar: number | null;
+    communication: number | null;
+    pace: number | null;
+  };
+}
+
+export async function fetchSessionReport(sessionId: string): Promise<ReportResponse> {
+  const res = await authFetch(`/api/sessions/${sessionId}/report`);
+  if (!res.ok) throw new ApiError(res.status, `Failed to load report (${res.status})`);
+  return res.json();
+}
+
+export async function retrySessionReport(sessionId: string): Promise<ReportResponse> {
+  const res = await authFetch(`/api/sessions/${sessionId}/report/retry`, { method: 'POST' });
+  if (!res.ok) throw new ApiError(res.status, `Failed to build report (${res.status})`);
+  return res.json();
+}
+
+export async function fetchProgress(limit = 10): Promise<ProgressEntry[]> {
+  const res = await authFetch(`/api/progress?limit=${limit}`);
+  if (!res.ok) throw new ApiError(res.status, `Failed to load progress (${res.status})`);
+  const body = await res.json();
+  return body.reports || [];
+}

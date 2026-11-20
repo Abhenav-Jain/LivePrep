@@ -27,7 +27,11 @@ from repositories import (
     get_turns,
     list_sessions_with_counts,
     get_session,
+    get_report,
+    get_previous_ready_report,
+    list_progress_reports,
 )
+from reports import RUBRIC_VERSION, run_report_pipeline
 from tickets import TicketStore, TicketLimitError
 
 load_dotenv()
@@ -72,6 +76,14 @@ app.add_middleware(
 )
 
 DEFAULT_MODEL = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.8-live")
+
+# Reports: text model used for the post-session analysis. Never hardcoded; see .env.example.
+REPORT_MODEL = os.getenv("REPORT_MODEL", "").strip()
+if not REPORT_MODEL:
+    logger.warning("REPORT_MODEL is not set: session reports will be stored as failed until it is configured")
+
+# Reports still running in the background (kept referenced so they are not garbage collected)
+REPORT_TASKS: set = set()
 
 # Concurrency limit for sessions (default 3)
 MAX_CONCURRENT_SESSIONS = int(os.getenv("MAX_CONCURRENT_SESSIONS", "3"))
@@ -272,6 +284,103 @@ async def get_session_transcript(
     }
 
 
+# --------------------------------------------------------------------------- #
+# /api/sessions/{id}/report  — post-session report (Step 6)
+# --------------------------------------------------------------------------- #
+def _previous_report_view(report_json: Optional[dict]) -> Optional[dict]:
+    """Small data needed for the "vs last session" deltas."""
+    if not isinstance(report_json, dict):
+        return None
+    scores = report_json.get("scores")
+    if not isinstance(scores, dict):
+        return None
+    keys = ("overall", "fluency", "vocabulary", "grammar", "communication", "pace")
+    return {"scores": {k: scores.get(k) for k in keys}}
+
+
+def _report_view(session, report, previous_json: Optional[dict]) -> dict:
+    return {
+        "session_id": str(session.id),
+        # No row yet is treated as pending: the report job may still be queued.
+        "status": report.status if report is not None else "pending",
+        "rubric_version": (report.rubric_version if report is not None else RUBRIC_VERSION),
+        "metrics": report.metrics_json if report is not None else None,
+        "report": report.report_json if report is not None else None,
+        "error": report.error if report is not None else None,
+        "created_at": report.created_at.isoformat() if report is not None and report.created_at else None,
+        "updated_at": report.updated_at.isoformat() if report is not None and report.updated_at else None,
+        "previous": _previous_report_view(previous_json),
+    }
+
+
+async def _owned_session_or_404(db: AsyncSession, user_id, session_id: str):
+    try:
+        sid = uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Session not found")
+    session = await get_session(db, user_id=user_id, session_id=sid)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return session
+
+
+@app.get("/api/sessions/{session_id}/report")
+async def get_session_report(
+    session_id: str,
+    user: AuthenticatedUser = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """The caller's report for one session: pending, ready (with analysis) or failed."""
+    session = await _owned_session_or_404(db, user.user_id, session_id)
+    report = await get_report(db, user_id=user.user_id, session_id=session.id)
+    previous = await get_previous_ready_report(db, user_id=user.user_id, before_started_at=session.started_at)
+    return _report_view(session, report, previous)
+
+
+@app.post("/api/sessions/{session_id}/report/retry")
+async def retry_session_report(
+    session_id: str,
+    user: AuthenticatedUser = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Regenerates a report (idempotent). Missing/failed reports are rebuilt on demand."""
+    session = await _owned_session_or_404(db, user.user_id, session_id)
+    db_factory = AsyncSessionLocal
+    if db_factory is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database is not configured",
+        )
+    sid = session.id
+
+    await run_report_pipeline(
+        user_id=user.user_id,
+        session_id=sid,
+        session_factory=db_factory,
+    )
+
+    # Reload through the request session so the client gets the stored result.
+    await db.rollback()  # end the read transaction; the pipeline committed separately
+    session = await get_session(db, user_id=user.user_id, session_id=sid)
+    if session is None:  # deleted while the report was generated
+        raise HTTPException(status_code=404, detail="Session not found")
+    report = await get_report(db, user_id=user.user_id, session_id=sid)
+    previous = await get_previous_ready_report(db, user_id=user.user_id, before_started_at=session.started_at)
+    return _report_view(session, report, previous)
+
+
+@app.get("/api/progress")
+async def get_progress(
+    limit: int = 10,
+    user: AuthenticatedUser = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Scores of the caller's latest ready reports (newest first), for the trend chart."""
+    limit = min(max(1, limit), 20)
+    rows = await list_progress_reports(db, user_id=user.user_id, limit=limit)
+    return {"reports": rows}
+
+
 @app.post("/api/ws-ticket")
 async def create_ws_ticket(user: AuthenticatedUser = Depends(current_user)):
     """Issues a single-use ticket (valid ~60 s) that the browser sends as its first WebSocket message."""
@@ -302,6 +411,34 @@ async def _close_session_record(user_id: uuid.UUID, session_id: uuid.UUID, durat
             await db.commit()
     except Exception as e:  # noqa: BLE001
         logger.error("Could not finalize session %s: %s", session_id, type(e).__name__)
+
+
+async def _report_job(user_id: uuid.UUID, session_id: uuid.UUID) -> None:
+    """Background report generation. Never raises: the call handler must not be affected."""
+    try:
+        result = await run_report_pipeline(
+            user_id=user_id,
+            session_id=session_id,
+            session_factory=AsyncSessionLocal,
+        )
+        logger.info("Report for session %s: %s", session_id, result)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Report job crashed (session=%s): %s", session_id, type(exc).__name__)
+
+
+def _schedule_report(user_id: uuid.UUID, session_id: uuid.UUID) -> None:
+    """Queue report generation after a call ends (disable with REPORT_AUTO_GENERATE=0)."""
+    if os.getenv("REPORT_AUTO_GENERATE", "1").strip().lower() not in {"1", "true", "yes"}:
+        return
+    if AsyncSessionLocal is None:
+        return
+    try:
+        task = asyncio.create_task(_report_job(user_id, session_id))
+    except RuntimeError:  # no running loop (should not happen inside a request)
+        logger.error("Could not schedule report for session %s: no event loop", session_id)
+        return
+    REPORT_TASKS.add(task)
+    task.add_done_callback(REPORT_TASKS.discard)
 
 
 async def _reject(websocket: WebSocket, code: int, message: Optional[str] = None) -> None:
@@ -480,6 +617,8 @@ async def websocket_live_endpoint(websocket: WebSocket):
                     _close_session_record(user_id, session_id, time.monotonic() - started, outcome)
                 )
                 logger.info("Session %s ended (%s)", session_id, outcome)
+                # Generate the report after the transcript and session row are final.
+                _schedule_report(user_id, session_id)
                 # Tell the client the call is over (normal closure), after the record is saved.
                 try:
                     await websocket.close(code=1000)

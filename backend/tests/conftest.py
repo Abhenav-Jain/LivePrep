@@ -13,6 +13,9 @@ import pytest
 os.environ.setdefault("GEMINI_API_KEY", "test_gemini_api_key_valid")
 os.environ.setdefault("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8000")
 os.environ.setdefault("SUPABASE_URL", "https://test-project.supabase.co")
+# No live-flow test should ever reach the report model (network + cost). Report tests
+# call the pipeline directly with a mocked model.
+os.environ.setdefault("REPORT_AUTO_GENERATE", "0")
 
 
 @pytest.fixture(autouse=True)

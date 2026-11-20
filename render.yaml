@@ -14,6 +14,9 @@ services:
         sync: false
       - key: SUPABASE_URL
         sync: false
+      # Text model for post-session reports (for example gemini-2.5-flash).
+      - key: REPORT_MODEL
+        sync: false
       - key: MAX_CONCURRENT_SESSIONS
         value: "3"
       - key: PORT
