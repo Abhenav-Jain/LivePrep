@@ -231,14 +231,24 @@ def _utc_day_start() -> datetime.datetime:
 
 
 async def _practice_usage(db: AsyncSession, user_id) -> dict:
-    """Minutes this user has practised today (UTC) and what is left of the daily limit."""
+    """Seconds this user has practised today (UTC) and what is left of the daily limit.
+
+    ``used_seconds`` is exact so the client can show a live timer; minutes stay for the
+    limit check and for readers that only care about the quota.
+    """
     used_s = await seconds_used_since(db, user_id=user_id, since=_utc_day_start())
     used_minutes = used_s // 60
     if DAILY_MINUTES_LIMIT <= 0:
-        return {"limit_minutes": None, "used_minutes": used_minutes, "remaining_minutes": None}
+        return {
+            "limit_minutes": None,
+            "used_minutes": used_minutes,
+            "used_seconds": used_s,
+            "remaining_minutes": None,
+        }
     return {
         "limit_minutes": DAILY_MINUTES_LIMIT,
         "used_minutes": used_minutes,
+        "used_seconds": used_s,
         "remaining_minutes": max(0, DAILY_MINUTES_LIMIT - used_minutes),
     }
 

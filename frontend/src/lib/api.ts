@@ -65,6 +65,31 @@ export function describeApiError(err: unknown): string {
   return 'Could not start the call. Please try again.';
 }
 
+// --------------------------------------------------------------------------- //
+// Practice usage (daily minutes)
+// --------------------------------------------------------------------------- //
+export interface PracticeUsage {
+  /** null when the daily limit is disabled (DAILY_MINUTES_LIMIT=0). */
+  limit_minutes: number | null;
+  used_minutes: number;
+  /** Exact seconds practised today; absent on servers older than this field. */
+  used_seconds?: number;
+  remaining_minutes: number | null;
+}
+
+export interface MeResponse {
+  user_id: string;
+  email: string | null;
+  usage: PracticeUsage;
+}
+
+/** Today's practice allowance of the signed-in user (the source of the usage timer). */
+export async function fetchMe(): Promise<MeResponse> {
+  const res = await authFetch('/api/me');
+  if (!res.ok) throw new ApiError(res.status, `Failed to load today's usage (${res.status})`);
+  return res.json();
+}
+
 export interface SessionSummary {
   id: string;
   scenario: string;

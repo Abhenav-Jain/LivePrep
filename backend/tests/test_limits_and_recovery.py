@@ -130,7 +130,12 @@ def test_me_reports_todays_usage(client, ws_db, monkeypatch):
 
     body = client.get("/api/me").json()
 
-    assert body["usage"] == {"limit_minutes": 30, "used_minutes": 10, "remaining_minutes": 20}
+    assert body["usage"] == {
+        "limit_minutes": 30,
+        "used_minutes": 10,
+        "used_seconds": 600,
+        "remaining_minutes": 20,
+    }
 
 
 def test_me_reports_no_limit_when_disabled(client, ws_db, monkeypatch):
@@ -143,6 +148,7 @@ def test_me_reports_no_limit_when_disabled(client, ws_db, monkeypatch):
 
     assert body["usage"]["limit_minutes"] is None
     assert body["usage"]["remaining_minutes"] is None
+    assert body["usage"]["used_seconds"] == 600
 
 
 def test_call_is_refused_when_the_daily_minutes_are_used(client, ws_db, monkeypatch, make_ticket):

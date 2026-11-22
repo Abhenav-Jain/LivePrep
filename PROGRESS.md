@@ -174,3 +174,19 @@
   - `cd backend && python -m pytest -q` -> **208 passed** (195 before).
   - Tests cover: limiter budget/window/sliding/disabled/per-key isolation; `usage` in `/api/me` with a limit and with the limit disabled; call refused at the limit and allowed below it; retry `429` with `Retry-After`; a foreign session's retry spending no budget; startup recovery rescheduling a pending report and skipping ready reports and live sessions; recovery with no database.
 - **Needs human check**: after a real call, `/api/me` should show today's minutes; sit through the limit once (or set `DAILY_MINUTES_LIMIT=1`) to see the refusal message.
+
+## Feature: Daily practice allowance visible in the app (live usage timer)
+- **Status**: Completed
+- **Branch**: `fix/voice-and-report`
+- **Why**: the daily limit was enforced by the server but invisible to the user; they only learned about it when a call was refused. The allowance is now shown everywhere in the app and counts down during a call.
+- **Files Changed**:
+  - `backend/app.py`: `_practice_usage()` also returns `used_seconds` (exact seconds today, so the client can show a precise timer); limit logic unchanged.
+  - `frontend/src/lib/api.ts`: `PracticeUsage` / `MeResponse` types and `fetchMe()`.
+  - `frontend/src/lib/usage.ts` (new): pure helpers (`limitSecondsFor`, `baseUsedSeconds`, `usedSecondsFor`, `remainingSecondsFor`, `usageTone`, `formatDuration`, `formatClock`).
+  - `frontend/src/lib/usePracticeUsage.ts` (new): fetches `/api/me`, counts the connected call second by second locally (the server stores a session only when it ends), refreshes when the call ends and every 5 minutes / on window focus.
+  - `frontend/src/components/UsageMeter.tsx` (new): `UsagePill` (header, always visible, tones green/amber/red, pulsing dot while live) and `UsageCard` (practice view: used / limit bar, current call timer, "resets at midnight UTC").
+  - `frontend/src/App.tsx`: wires the hook, the header pill and the practice-view card.
+  - `backend/tests/test_limits_and_recovery.py`, `frontend/src/lib/usage.test.ts` (new), `README.md`, `PROGRESS.md`.
+- **Verification Results**: backend `python -m pytest -q` and frontend `npm run test` + `npm run build` (see the run log in the conversation).
+- **Decisions**: the running call is counted client-side and reconciled with the server after the call ends, because `sessions.duration_s` is written on session end. When `DAILY_MINUTES_LIMIT=0` the UI shows total time used with "no daily limit" instead of a countdown.
+- **Needs human check**: start a call and confirm the header pill counts down every second and the card shows "This call m:ss"; end the call and confirm the total stops at the server value; set `DAILY_MINUTES_LIMIT=1` to see the amber/red states.

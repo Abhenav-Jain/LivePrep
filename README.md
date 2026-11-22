@@ -206,7 +206,7 @@ UI: `#/sessions/<id>/report` shows the overall score, five skill scores, objecti
 **Setup**: run `alembic upgrade head` to create the `reports` table, and set `REPORT_MODEL` (for example `gemini-2.5-flash`). `REPORT_AUTO_GENERATE=0` disables automatic generation (used by the test suite); `REPORT_LLM_TIMEOUT_SECONDS` (default 45) bounds one model call.
 
 **Cost guards** (every live minute and every rebuild costs money)
-- `DAILY_MINUTES_LIMIT` (default 30, `0` disables): practice minutes per user per UTC day; a call over the allowance is refused with an explanation, and `GET /api/me` returns `usage {limit_minutes, used_minutes, remaining_minutes}`.
+- `DAILY_MINUTES_LIMIT` (default 30, `0` disables): practice minutes per user per UTC day; a call over the allowance is refused with an explanation, and `GET /api/me` returns `usage {limit_minutes, used_minutes, used_seconds, remaining_minutes}`. The app shows this allowance in the header (live countdown while a call runs) and in a "Today's practice" card with the current call's timer; the frontend counts the running call itself because the server only records a session when it ends.
 - `REPORT_RETRY_LIMIT` / `REPORT_RETRY_WINDOW_SECONDS` (default 10 per hour): rebuild budget per user; over it the endpoint answers `429` with `Retry-After`.
 - `MAX_CONCURRENT_REPORT_JOBS` (default 2): report jobs running at once.
 - `REPORT_RECOVERY_LIMIT` (default 20): on startup the server rebuilds reports a previous process left `pending` (a deploy or crash used to leave the page polling forever).

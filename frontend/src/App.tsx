@@ -28,6 +28,8 @@ import { SessionsList } from './components/SessionsList';
 import { SessionTranscriptView } from './components/SessionTranscriptView';
 import { ReportView } from './components/ReportView';
 import { ProgressView } from './components/ProgressView';
+import { UsageCard, UsagePill } from './components/UsageMeter';
+import { usePracticeUsage } from './lib/usePracticeUsage';
 
 export const App: React.FC = () => {
   const {
@@ -59,6 +61,8 @@ export const App: React.FC = () => {
   } = useLiveSession();
 
   const { email, signOut } = useAuth();
+  // Today's allowance: the server total, plus the seconds of a call that is still running.
+  const practiceUsage = usePracticeUsage(status === 'connected');
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [inputPrompt, setInputPrompt] = useState<string>('');
   const [route, setRoute] = useState<string>(() => window.location.hash || '#/');
@@ -177,6 +181,15 @@ export const App: React.FC = () => {
         </nav>
 
         <div className="flex items-center space-x-2 sm:space-x-3">
+          {/* Daily practice allowance: live countdown while a call is connected */}
+          <UsagePill
+            usage={practiceUsage.usage}
+            liveSeconds={practiceUsage.liveSeconds}
+            isLive={status === 'connected'}
+            loading={practiceUsage.loading}
+            error={practiceUsage.error}
+          />
+
           {/* Main Quick Action Header Power Button (only shown in live view) */}
           {!route.startsWith('#/sessions') && !isProgressView && (
             <button
@@ -334,6 +347,15 @@ export const App: React.FC = () => {
                 )}
               </div>
             </div>
+
+            {/* Today's practice time: used / limit and the running call's timer */}
+            <UsageCard
+              usage={practiceUsage.usage}
+              liveSeconds={practiceUsage.liveSeconds}
+              isLive={status === 'connected'}
+              loading={practiceUsage.loading}
+              error={practiceUsage.error}
+            />
 
             {/* Center Stage: Voice Orb & PiP overlay */}
             <div className="relative flex-1 flex flex-col items-center justify-center min-h-[220px]">
