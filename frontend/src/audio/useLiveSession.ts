@@ -72,9 +72,9 @@ export function useLiveSession() {
   const [agentState, setAgentState] = useState<'idle' | 'listening' | 'thinking' | 'speaking'>('idle');
   const [echoShield, setEchoShield] = useState<boolean>(true); // Anti-Self-Interruption Shield
   const [visionMode, setVisionMode] = useState<'adaptive' | 'continuous'>('adaptive');
-  const [isAiMuted, setIsAiMuted] = useState<boolean>(() => {
-    return localStorage.getItem('liveprep_ai_muted') === 'true';
-  });
+  // Per call only and never persisted: a stored "muted" flag silently kept the AI silent in
+  // every later session while its transcript still appeared.
+  const [isAiMuted, setIsAiMuted] = useState<boolean>(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const connectingRef = useRef<boolean>(false);   // true while a call is being prepared (ticket request)
@@ -115,7 +115,6 @@ export function useLiveSession() {
         setAgentState((prev) => (prev === 'speaking' ? 'idle' : prev));
       }
     });
-    player.setMuted(localStorage.getItem('liveprep_ai_muted') === 'true');
     audioPlayerRef.current = player;
 
     return () => {
@@ -126,7 +125,6 @@ export function useLiveSession() {
   const toggleAiMute = useCallback(() => {
     setIsAiMuted((prev) => {
       const next = !prev;
-      localStorage.setItem('liveprep_ai_muted', String(next));
       audioPlayerRef.current?.setMuted(next);
       return next;
     });
@@ -175,19 +173,24 @@ export function useLiveSession() {
           isUserSpeakingRef.current = true;
           setAgentState('listening');
         } else if (isUserSpeakingRef.current && !silenceTimerRef.current) {
-          // Fast Hybrid VAD trigger (280ms debounce for natural turn-taking)
+          // UI-only debounce. The agent's turn is ended by Gemini's own voice activity detection;
+          // forcing an early audio_stream_end made it cut in whenever the candidate paused to think.
           silenceTimerRef.current = window.setTimeout(() => {
-            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && isUserSpeakingRef.current) {
-              wsRef.current.send(JSON.stringify({ type: 'audio_stream_end' }));
-            }
             isUserSpeakingRef.current = false;
             silenceTimerRef.current = null;
             setAgentState('thinking');
-          }, 280);
+          }, 500);
         }
 
+        // Echo Shield: while the interviewer is speaking, microphone frames that are only
+        // speaker bleed are not forwarded. Sending them let the server's VAD "hear" the
+        // agent's own voice and cancel its reply half-way through a sentence. Loud, deliberate
+        // speech still gets through.
+        const agentSpeaking = agentStateRef.current === 'speaking';
+        const isSpeakerBleed = echoShieldRef.current && agentSpeaking && volume <= 0.12;
+
         // Stream audio chunk to backend as binary frame (0x01 type byte + raw PCM)
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && pcmData) {
+        if (!isSpeakerBleed && wsRef.current && wsRef.current.readyState === WebSocket.OPEN && pcmData) {
           const typeByte = new Uint8Array([0x01]);
           const combined = new Uint8Array(typeByte.length + pcmData.byteLength);
           combined.set(typeByte, 0);
@@ -386,6 +389,9 @@ export function useLiveSession() {
     }
     serverErrorRef.current = '';
     lastNoticeRef.current = '';
+    // Called from the Start button's click: unlock the speaker now, so playback is never
+    // left suspended by the browser's autoplay policy (that left the call silent).
+    audioPlayerRef.current?.unlock();
     setStatus('connecting');
     setStatusMessage('Signing in to the Live Gateway...');
 

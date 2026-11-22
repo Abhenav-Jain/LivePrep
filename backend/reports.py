@@ -25,6 +25,7 @@ import json
 import logging
 import os
 import re
+import time
 import unicodedata
 import uuid
 from typing import Any, Optional, Sequence
@@ -46,6 +47,9 @@ MIN_WORDS_FOR_LLM = 30
 _MAX_TRANSCRIPT_CHARS = 60_000
 _MAX_TURNS_IN_PROMPT = 400
 _DEFAULT_LLM_TIMEOUT_S = 45.0
+# Thinking tokens count toward this limit on current Gemini models, so leave room for
+# both the reasoning and the full JSON report.
+_MAX_OUTPUT_TOKENS = 8_192
 
 PRONUNCIATION_NOTE = "Audio-based pronunciation analysis coming soon."
 FILLER_NOTE = "Approximate: transcription can miss filler words."
@@ -460,7 +464,7 @@ async def _call_llm(
                 system_instruction=SYSTEM_INSTRUCTION,
                 response_mime_type="application/json",
                 temperature=0.2,
-                max_output_tokens=4_096,
+                max_output_tokens=_MAX_OUTPUT_TOKENS,
             ),
         ),
         timeout=timeout_s,
@@ -487,14 +491,18 @@ async def analyze_transcript(
             api_key=api_key, model=model, prompt=prompt, timeout_s=timeout_s
         )
     except (ValidationError, ValueError) as exc:
-        logger.warning("Report output invalid (%s); retrying once", type(exc).__name__)
+        detail = " ".join(str(exc).split())[:300]
+        logger.warning(
+            "Report output invalid (%s): %s; retrying once", type(exc).__name__, detail
+        )
         return await _call_llm(
             api_key=api_key,
             model=model,
             prompt=prompt,
             repair_note=(
                 "Your previous reply was not valid JSON for the required schema. "
-                "Reply with the JSON object only, with every required field."
+                "Reply with the JSON object only, with every required field. "
+                f"Validation error: {detail}"
             ),
             timeout_s=timeout_s,
         )
@@ -571,21 +579,32 @@ async def run_report_pipeline(
         return await _store(
             session_factory, user_id, session_id, "failed",
             metrics=metrics,
-            error="Reports are not configured on the server yet. Please try again later.",
+            error=(
+                "The report model is not configured on the server (REPORT_MODEL). "
+                "Add it to backend/.env, restart the server, then retry."
+            ),
         )
 
     # 4. Model call, no DB connection held.
+    started = time.monotonic()
     try:
         analysis = await analyze_transcript(
             turns=turns, metrics=metrics, profile=profile,
             api_key=api_key, model=model, timeout_s=timeout_s,
         )
     except Exception as exc:  # noqa: BLE001
-        logger.error("Report generation failed (session=%s): %s", session_id, type(exc).__name__)
+        cause = _error_cause(exc)
+        # Full traceback server-side; the short cause is stored so the report page can show
+        # what actually failed instead of only "try again". The elapsed time tells a rate
+        # limit (fails in a second) apart from a timeout (dies at the configured limit).
+        logger.error(
+            "Report generation failed (session=%s, model=%s, after %.1fs): %s",
+            session_id, model, time.monotonic() - started, cause, exc_info=True,
+        )
         return await _store(
             session_factory, user_id, session_id, "failed",
             metrics=metrics,
-            error="We could not build your report. Please retry in a moment.",
+            error=f"We could not build your report. {cause}",
         )
 
     return await _store(
@@ -621,6 +640,34 @@ async def _store(
     except Exception as exc:  # noqa: BLE001
         logger.error("Could not store report (session=%s): %s", session_id, type(exc).__name__)
         return "failed"
+
+
+def _error_cause(exc: BaseException) -> str:
+    """A short, actionable reason for a failed report call (shown on the report page).
+
+    Only what the owner can fix: the full error stays in the server log. Errors are
+    matched on the HTTP status first, so a message that merely contains a number (e.g.
+    "offset 404") cannot be mistaken for a missing model.
+    """
+    code = getattr(exc, "code", None)
+    message = str(exc).upper()
+    if code == 404 or "NOT_FOUND" in message:
+        return (
+            "The report model was not found. Check REPORT_MODEL in backend/.env, "
+            "restart the server, then retry."
+        )
+    if code in (401, 403) or "PERMISSION_DENIED" in message or "UNAUTHENTICATED" in message:
+        return "The Gemini API key was rejected. Check GEMINI_API_KEY and the model's access."
+    if code == 429 or "RESOURCE_EXHAUSTED" in message:
+        return "The Gemini API rate limit or quota was reached. Wait a minute, then retry."
+    if isinstance(exc, TimeoutError):
+        return (
+            "The report model did not answer in time. Retry, or raise "
+            "REPORT_LLM_TIMEOUT_SECONDS in backend/.env."
+        )
+    if isinstance(exc, (ValidationError, ValueError)):
+        return "The model answer did not match the report format. Retry the report."
+    return "Please check the backend log for the details."
 
 
 async def _store_failure(

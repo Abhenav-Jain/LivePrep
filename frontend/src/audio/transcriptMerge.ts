@@ -20,11 +20,23 @@ export type TranscriptMessage =
   | { type: 'text'; text: string; sender?: 'user' };
 
 /**
- * Normalises whitespace in transcript fragments.
- * Keeps whitespace between words clean.
+ * Joins transcript fragments into one clean string.
+ *
+ * Gemini streams transcription in small pieces and does not always put a space at the
+ * piece boundary ('a' + 'clever', 'that' + 'introduction'), which glued words together.
+ * A space is inserted when a piece starts right after a word character.
  */
 export function joinFragments(fragments: string[]): string {
-  const raw = fragments.join('');
+  let raw = '';
+  for (const fragment of fragments) {
+    if (!fragment) continue;
+    const previous = raw.slice(-1);
+    const next = fragment.charAt(0);
+    if (raw && !/\s/.test(previous) && !/\s/.test(next) && /[\p{L}\p{N}]/u.test(previous) && /[\p{L}\p{N}]/u.test(next)) {
+      raw += ' ';
+    }
+    raw += fragment;
+  }
   return raw.replace(/[ \t\n\r]+/g, ' ').trim();
 }
 

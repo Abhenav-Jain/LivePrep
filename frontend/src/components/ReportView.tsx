@@ -90,6 +90,9 @@ export const ReportView: React.FC<ReportViewProps> = ({ sessionId, onBack, onOpe
     setError(null);
     try {
       const resp = await retrySessionReport(sessionId);
+      // A rebuild can answer "pending": start the polling budget fresh, otherwise a page that
+      // already used up MAX_POLLS would sit on the spinner without ever checking again.
+      setPolls(0);
       setData(resp);
     } catch (err) {
       setError(describeApiError(err));
@@ -203,6 +206,25 @@ export const ReportView: React.FC<ReportViewProps> = ({ sessionId, onBack, onOpe
           >
             <RefreshCw className={`w-4 h-4 ${retrying ? 'animate-spin' : ''}`} />
             <span>{retrying ? 'Rebuilding report…' : 'Retry report'}</span>
+          </button>
+        </div>
+      )}
+
+      {/* Missing: the call ended but no report row exists (auto-generation never ran) */}
+      {data?.status === 'missing' && (
+        <div className="text-center py-14 bg-surface/40 border border-slate-800/80 rounded-2xl p-8">
+          <Sparkles className="w-10 h-10 mx-auto text-primary mb-3" />
+          <h3 className="text-base font-semibold text-slate-100">No report for this session yet</h3>
+          <p className="text-sm text-slate-400 mt-1 max-w-md mx-auto">
+            The transcript is saved. Generate the analysis now to see your scores and action plan.
+          </p>
+          <button
+            onClick={() => void handleRetry()}
+            disabled={retrying}
+            className="mt-5 inline-flex items-center space-x-2 px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-sm font-medium shadow-lg shadow-blue-500/20 transition-all disabled:opacity-60"
+          >
+            <RefreshCw className={`w-4 h-4 ${retrying ? 'animate-spin' : ''}`} />
+            <span>{retrying ? 'Building report…' : 'Generate report'}</span>
           </button>
         </div>
       )}

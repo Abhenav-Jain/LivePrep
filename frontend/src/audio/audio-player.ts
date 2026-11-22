@@ -16,26 +16,66 @@ export class StreamAudioPlayer {
   private initContext() {
     if (!this.ctx || this.ctx.state === 'closed') {
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      this.ctx = new AudioCtx({ sampleRate: 24000 });
-      this.nextPlayTime = 0;
+      try {
+        // No forced output sample rate: some devices reject 24000 Hz with NotSupportedError,
+        // and because this runs inside the socket message handler that error silently swallowed
+        // every audio chunk (the call stayed mute while transcripts kept arriving). Our 24 kHz
+        // buffers are resampled to the device rate by the browser.
+        this.ctx = new AudioCtx();
+        this.nextPlayTime = 0;
+      } catch (err) {
+        console.error('Could not open the audio output device:', err);
+        this.ctx = null;
+        return;
+      }
     }
     if (this.ctx.state === 'suspended') {
-      this.ctx.resume();
+      void this.ctx.resume();
     }
   }
 
-  public playChunk(pcmData: ArrayBuffer | Uint8Array) {
+  /** Base64 (from the JSON gateway) -> raw PCM bytes. */
+  private static base64ToBytes(b64: string): Uint8Array {
+    const clean = b64.includes(',') ? b64.slice(b64.indexOf(',') + 1) : b64;
+    const binary = atob(clean);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+  }
+
+  /**
+   * Creates/resumes the AudioContext. Call it from a user gesture (the Start button) so the
+   * browser never keeps playback suspended, which would leave the call silent.
+   */
+  public unlock() {
+    this.initContext();
+  }
+
+  public playChunk(pcmData: ArrayBuffer | Uint8Array | string) {
     if (this.isMuted) return;
 
     this.initContext();
     if (!this.ctx) return;
 
-    // Convert to Uint8Array if needed
-    const bytes = pcmData instanceof Uint8Array ? pcmData : new Uint8Array(pcmData);
+    // The gateway may send raw PCM (binary frame) or base64 PCM ({"type":"audio"} JSON)
+    let bytes: Uint8Array;
+    if (typeof pcmData === 'string') {
+      if (!pcmData) return;
+      try {
+        bytes = StreamAudioPlayer.base64ToBytes(pcmData);
+      } catch {
+        return;
+      }
+    } else {
+      bytes = pcmData instanceof Uint8Array ? pcmData : new Uint8Array(pcmData);
+    }
+    if (bytes.byteLength < 2) return;
 
     // Convert Int16 little-endian to Float32 [-1.0, 1.0]
-    const int16 = new Int16Array(bytes.buffer as ArrayBuffer, bytes.byteOffset, bytes.length / 2);
-    const numSamples = int16.length;
+    const numSamples = Math.floor(bytes.byteLength / 2);
+    const int16 = new Int16Array(bytes.buffer as ArrayBuffer, bytes.byteOffset, numSamples);
     if (numSamples === 0) return;
 
     const float32 = new Float32Array(numSamples);

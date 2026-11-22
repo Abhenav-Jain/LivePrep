@@ -120,7 +120,7 @@ def test_foreign_and_missing_reports_are_identical_404(client, ws_db):
         _clear_auth()
 
 
-def test_report_is_pending_until_generated(client, ws_db):
+def test_report_is_missing_until_generated(client, ws_db):
     user_id = uuid.uuid4()
     sid = _seed_session(ws_db, user_id)
 
@@ -129,7 +129,8 @@ def test_report_is_pending_until_generated(client, ws_db):
         r = client.get(f"/api/sessions/{sid}/report")
         assert r.status_code == 200
         body = r.json()
-        assert body["status"] == "pending"
+        # The call is finished and no row exists: the client can offer "Generate report".
+        assert body["status"] == "missing"
         assert body["report"] is None
         assert body["metrics"] is None
         assert body["rubric_version"] == reports.RUBRIC_VERSION

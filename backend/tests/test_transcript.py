@@ -50,6 +50,16 @@ def test_join_trims():
     assert join_fragments(["  x  "]) == "x"
 
 
+def test_join_inserts_space_between_glued_fragments():
+    # Gemini sometimes streams pieces without a space at the boundary.
+    assert join_fragments(["that", "introduction"]) == "that introduction"
+    assert join_fragments(["a", "clever solution"]) == "a clever solution"
+
+
+def test_join_keeps_existing_spaces():
+    assert join_fragments(["Excellent ", "work on"]) == "Excellent work on"
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

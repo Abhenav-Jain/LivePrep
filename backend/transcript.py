@@ -24,12 +24,27 @@ _MAX_TURNS_PER_SESSION = 2_000
 def join_fragments(fragments: list[str]) -> str:
     """Joins transcript fragments into one clean string.
 
-    Concatenates exactly as received, then normalises whitespace
-    (runs of spaces / newlines → single space, trim).
+    Gemini streams transcription in small pieces and does not always put a space at the
+    piece boundary ("a" + "clever", "that" + "introduction"), which glued words together.
+    A single space is therefore inserted when a piece starts right after a word character
+    and carries no whitespace of its own. Whitespace that is already present is respected,
+    and runs of spaces / newlines are collapsed.
     This is the ONE function used server-side so text never disagrees
     with what the client would compute using the same rule.
     """
-    raw = "".join(fragments)
+    raw = ""
+    for fragment in fragments:
+        if not fragment:
+            continue
+        if (
+            raw
+            and not raw[-1].isspace()
+            and not fragment[0].isspace()
+            and raw[-1].isalnum()
+            and fragment[0].isalnum()
+        ):
+            raw += " "
+        raw += fragment
     return re.sub(r"[ \t\n\r]+", " ", raw).strip()
 
 

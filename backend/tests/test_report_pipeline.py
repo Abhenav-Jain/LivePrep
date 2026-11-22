@@ -135,6 +135,50 @@ def test_model_failure_is_stored_as_failed_with_metrics(ws_db, monkeypatch):
     assert row.report_json is None
 
 
+def test_failure_reason_is_stored_for_a_missing_model(ws_db, monkeypatch):
+    """A wrong REPORT_MODEL must tell the owner to fix REPORT_MODEL, not just "try again"."""
+    user_id, session_id = _seed(ws_db)
+
+    class _NotFound(Exception):
+        code = 404
+
+        def __str__(self):
+            return "404 NOT_FOUND: models/wrong-model is not found"
+
+    async def boom(**kwargs):
+        raise _NotFound()
+
+    monkeypatch.setattr(reports, "analyze_transcript", boom)
+    monkeypatch.setenv("REPORT_MODEL", "wrong-model")
+
+    status = asyncio.run(reports.run_report_pipeline(
+        user_id=user_id, session_id=session_id, session_factory=ws_db
+    ))
+    assert status == "failed"
+    row = _read_report(ws_db, session_id)
+    assert row.status == "failed"
+    assert "REPORT_MODEL" in (row.error or "")
+
+
+def test_error_cause_maps_the_fixable_failures():
+    class _Err(Exception):
+        def __init__(self, code, message=""):
+            super().__init__(message)
+            self.code = code
+
+    assert "REPORT_MODEL" in reports._error_cause(_Err(404, "NOT_FOUND"))
+    assert "API key" in reports._error_cause(_Err(403, "PERMISSION_DENIED"))
+    assert "rate limit" in reports._error_cause(_Err(429, "RESOURCE_EXHAUSTED"))
+    assert "did not answer in time" in reports._error_cause(TimeoutError())
+    assert "report format" in reports._error_cause(ValueError("empty model answer"))
+    assert "backend log" in reports._error_cause(RuntimeError("model exploded"))
+
+    # A number inside a message is not an HTTP status, and "quota project" in a
+    # permission error is not a rate limit: neither may be misreported.
+    assert "REPORT_MODEL" not in reports._error_cause(_Err(400, "invalid offset 404"))
+    assert "rate limit" not in reports._error_cause(_Err(403, "quota project denied"))
+
+
 def test_unconfigured_model_fails_without_network(ws_db, monkeypatch):
     user_id, session_id = _seed(ws_db)
     monkeypatch.setenv("REPORT_MODEL", "")

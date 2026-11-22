@@ -177,7 +177,13 @@ export const SessionsList: React.FC<SessionsListProps> = ({
                   className="flex items-center space-x-1 px-3.5 py-1.5 rounded-lg bg-primary/15 hover:bg-primary/25 text-xs font-medium text-primary-glow transition-colors border border-primary/30"
                 >
                   <Sparkles className="w-3 h-3" />
-                  <span>{s.report_status === 'failed' ? 'Retry report' : 'Report'}</span>
+                  <span>
+                    {s.report_status === 'ready'
+                      ? 'Report'
+                      : s.report_status === 'failed'
+                      ? 'Retry report'
+                      : 'Generate report'}
+                  </span>
                 </button>
               </div>
             </div>

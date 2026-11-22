@@ -184,7 +184,7 @@ export interface ReportAnalysis {
 
 export interface ReportResponse {
   session_id: string;
-  status: 'pending' | 'ready' | 'failed';
+  status: 'pending' | 'ready' | 'failed' | 'missing';
   rubric_version: string;
   metrics: ReportMetrics | null;
   report: ReportAnalysis | null;

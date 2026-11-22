@@ -299,10 +299,18 @@ def _previous_report_view(report_json: Optional[dict]) -> Optional[dict]:
 
 
 def _report_view(session, report, previous_json: Optional[dict]) -> dict:
+    """API shape of a report. A finished call with no report row can be generated on demand."""
+    if report is not None:
+        status_value = report.status
+    else:
+        # For a running call the job may still be queued, so pending is honest. A finished
+        # call without a row means auto-generation never ran (older build, REPORT_AUTO_GENERATE=0,
+        # or the row was never created), so the client offers a "Generate report" action.
+        status_value = "pending" if session.status == "active" else "missing"
+
     return {
         "session_id": str(session.id),
-        # No row yet is treated as pending: the report job may still be queued.
-        "status": report.status if report is not None else "pending",
+        "status": status_value,
         "rubric_version": (report.rubric_version if report is not None else RUBRIC_VERSION),
         "metrics": report.metrics_json if report is not None else None,
         "report": report.report_json if report is not None else None,

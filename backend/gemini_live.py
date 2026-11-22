@@ -152,11 +152,18 @@ class GeminiLiveBridge:
             input_audio_transcription=types.AudioTranscriptionConfig(),
             output_audio_transcription=types.AudioTranscriptionConfig(),
             realtime_input_config=types.RealtimeInputConfig(
+                # Turn-taking: the candidate must be able to finish an answer (and to think
+                # for a couple of seconds) before the interviewer replies. LOW end-of-speech
+                # sensitivity + 1.5 s of silence (the API caps this at 2000 ms) give that room.
                 automatic_activity_detection=types.AutomaticActivityDetection(
-                    end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_HIGH,
-                    silence_duration_ms=600,
-                    prefix_padding_ms=100,
-                )
+                    end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW,
+                    silence_duration_ms=1500,
+                    prefix_padding_ms=300,
+                ),
+                # Never cancel a reply half-way through. On laptop speakers the microphone
+                # picks up the interviewer's own voice, and the server-side VAD used to treat
+                # that as the candidate talking over it and cut the sentence short.
+                activity_handling=types.ActivityHandling.NO_INTERRUPTION,
             ),
             session_resumption=types.SessionResumptionConfig(
                 handle=self.resume_handle
@@ -274,6 +281,8 @@ class GeminiLiveBridge:
         MAX_JSON_MESSAGE_SIZE = 1024 * 1024     # 1 MB
         ALLOWED_MESSAGE_TYPES = {"auth", "audio", "video", "text", "audio_stream_end"}
 
+        first_client_audio_logged = False
+
         while True:
             try:
                 raw_msg = await ws_receive()
@@ -292,6 +301,15 @@ class GeminiLiveBridge:
                     payload = raw_msg[1:]
 
                     if type_byte == 0x01:  # Audio PCM 16kHz
+                        # One line per call: tells a mute browser/microphone apart from a
+                        # model that receives the audio but never answers.
+                        if not first_client_audio_logged:
+                            first_client_audio_logged = True
+                            logger.info(
+                                "Receiving microphone audio from the client (first chunk: %d bytes)",
+                                len(payload),
+                            )
+
                         # Check audio energy for activity tracking
                         rms = _calculate_audio_rms(payload)
                         if rms >= self.silence_rms_threshold:
@@ -368,6 +386,7 @@ class GeminiLiveBridge:
 
     async def _gemini_to_client(self, session, ws_send):
         """Streams audio, transcription, and tool execution from Gemini back to the client."""
+        first_audio_sent = False
         while True:
             try:
                 async for response in session.receive():
@@ -427,6 +446,14 @@ class GeminiLiveBridge:
                                         "data": audio_b64,
                                         "sample_rate": 24000
                                     })
+                                    # One line per call proves the model audio leaves the server,
+                                    # which tells a silent client apart from a silent model.
+                                    if not first_audio_sent:
+                                        first_audio_sent = True
+                                        logger.info(
+                                            "Sending AI audio to the client (first chunk: %d bytes)",
+                                            len(part.inline_data.data),
+                                        )
 
                         if content.turn_complete:
                             if self._assembler:

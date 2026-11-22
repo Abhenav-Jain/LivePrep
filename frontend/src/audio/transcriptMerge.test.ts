@@ -14,6 +14,15 @@ describe('joinFragments', () => {
   it('collapses multiple spaces and newlines', () => {
     expect(joinFragments(['word1   word2\n\nword3'])).toBe('word1 word2 word3');
   });
+
+  it('inserts a space when fragments arrive glued together', () => {
+    expect(joinFragments(['that', 'introduction'])).toBe('that introduction');
+    expect(joinFragments(['a', 'clever solution'])).toBe('a clever solution');
+  });
+
+  it('does not double spaces that are already there', () => {
+    expect(joinFragments(['Excellent ', 'work on'])).toBe('Excellent work on');
+  });
 });
 
 describe('mergeTranscript', () => {
