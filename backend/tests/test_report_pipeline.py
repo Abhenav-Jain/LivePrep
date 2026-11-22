@@ -160,6 +160,26 @@ def test_failure_reason_is_stored_for_a_missing_model(ws_db, monkeypatch):
     assert "REPORT_MODEL" in (row.error or "")
 
 
+def test_format_failure_names_the_offending_field(ws_db, monkeypatch):
+    """The report page must say which field was wrong, not only "format mismatch"."""
+    user_id, session_id = _seed(ws_db)
+
+    async def boom(**kwargs):
+        return _analysis(estimated_cefr="fluent")  # raises ValidationError
+
+    monkeypatch.setattr(reports, "analyze_transcript", boom)
+    monkeypatch.setenv("REPORT_MODEL", "test-text-model")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    status = asyncio.run(reports.run_report_pipeline(
+        user_id=user_id, session_id=session_id, session_factory=ws_db
+    ))
+    assert status == "failed"
+    row = _read_report(ws_db, session_id)
+    assert "report format" in (row.error or "")
+    assert "estimated_cefr" in (row.error or "")
+
+
 def test_error_cause_maps_the_fixable_failures():
     class _Err(Exception):
         def __init__(self, code, message=""):
@@ -277,9 +297,28 @@ def test_wrong_action_plan_length_is_rejected():
         _analysis(action_plan=[{"step": "only one", "daily_exercise": "x"}])
 
 
-def test_extra_fields_are_rejected():
+def test_extra_fields_from_the_model_are_ignored():
+    """A weaker model adds keys of its own; they are dropped, never fatal."""
+    analysis = _analysis(overall=100)
+    assert analysis.scores.fluency == 60
+
+
+def test_cosmetic_differences_do_not_fail_the_report():
+    analysis = _analysis(
+        estimated_cefr="b1 (intermediate)",
+        strengths=["Clear structure", "Good examples", "Calm tone", "Nice pace"],
+        action_plan=[
+            {"step": f"Step {i}", "daily_exercise": "5 minutes of practice"} for i in range(3)
+        ],
+    )
+    assert analysis.estimated_cefr == "B1"
+    assert len(analysis.strengths) == 4
+    assert len(analysis.action_plan) == 3
+
+
+def test_invalid_cefr_is_still_rejected():
     with pytest.raises(ValidationError):
-        _analysis(overall=100)
+        _analysis(estimated_cefr="fluent")
 
 
 def test_prompt_keeps_malicious_transcript_as_data():

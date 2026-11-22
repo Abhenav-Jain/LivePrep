@@ -32,7 +32,7 @@ from typing import Any, Optional, Sequence
 
 from google import genai
 from google.genai import types
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from repositories import get_profile, get_session, get_turns, upsert_report
 
@@ -71,11 +71,13 @@ _STOPWORDS = frozenset(
 # --------------------------------------------------------------------------- #
 # Pydantic: the exact shape we accept from the model
 # --------------------------------------------------------------------------- #
-class _Strict(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class _ModelAnswer(BaseModel):
+    # Unknown keys are dropped instead of failing the report: they are never read, and a
+    # harmless extra field used to cost a whole retry and then a failed session.
+    model_config = ConfigDict(extra="ignore")
 
 
-class Scores(_Strict):
+class Scores(_ModelAnswer):
     """Sub-scores only. ``overall`` is computed by the server, never by the model."""
 
     fluency: int = Field(ge=0, le=100)
@@ -85,41 +87,50 @@ class Scores(_Strict):
     pace: int = Field(ge=0, le=100)
 
 
-class GrammarMistake(_Strict):
+class GrammarMistake(_ModelAnswer):
     said: str = Field(min_length=1, max_length=300)
     better: str = Field(min_length=1, max_length=300)
     rule: str = Field(min_length=1, max_length=300)
 
 
-class WordUpgrade(_Strict):
+class WordUpgrade(_ModelAnswer):
     used: str = Field(min_length=1, max_length=60)
     alternatives: list[str] = Field(min_length=1, max_length=5)
 
 
-class InterviewFeedback(_Strict):
+class InterviewFeedback(_ModelAnswer):
     relevance: int = Field(ge=0, le=100)
     structure: int = Field(ge=0, le=100)
     confidence: int = Field(ge=0, le=100)
     comments: str = Field(min_length=1, max_length=600)
 
 
-class ActionStep(_Strict):
+class ActionStep(_ModelAnswer):
     step: str = Field(min_length=1, max_length=300)
     daily_exercise: str = Field(min_length=1, max_length=300)
 
 
-class ReportAnalysis(_Strict):
-    """Validated LLM output. Length rules make a lazy/garbled answer fail and retry."""
+class ReportAnalysis(_ModelAnswer):
+    """Validated LLM output: real content is required, cosmetics are not worth a retry."""
 
     scores: Scores
     estimated_cefr: str = Field(pattern=r"^(A1|A2|B1|B2|C1|C2)$")
     summary: str = Field(min_length=1, max_length=800)
-    strengths: list[str] = Field(min_length=3, max_length=3)
+    strengths: list[str] = Field(min_length=2, max_length=6)
     grammar_mistakes: list[GrammarMistake] = Field(max_length=8)
     words_to_upgrade: list[WordUpgrade] = Field(max_length=10)
     interview_feedback: InterviewFeedback
-    action_plan: list[ActionStep] = Field(min_length=5, max_length=5)
+    action_plan: list[ActionStep] = Field(min_length=3, max_length=7)
     next_session_focus: str = Field(min_length=1, max_length=300)
+
+    @field_validator("estimated_cefr", mode="before")
+    @classmethod
+    def _level_only(cls, value):
+        """Accept "b1" or "B1 (intermediate)": the level is labelled, not scored."""
+        match = re.match(r"(A1|A2|B1|B2|C1|C2)", str(value or "").strip().upper())
+        if not match:
+            raise ValueError("estimated_cefr must be one of A1, A2, B1, B2, C1, C2")
+        return match.group(1)
 
 
 # --------------------------------------------------------------------------- #
@@ -594,6 +605,9 @@ async def run_report_pipeline(
         )
     except Exception as exc:  # noqa: BLE001
         cause = _error_cause(exc)
+        if isinstance(exc, (ValidationError, ValueError)):
+            # Name the first offending field, so a format mismatch is visible on the page.
+            cause = f"{cause} Detail: {' '.join(str(exc).split())[:200]}"
         # Full traceback server-side; the short cause is stored so the report page can show
         # what actually failed instead of only "try again". The elapsed time tells a rate
         # limit (fails in a second) apart from a timeout (dies at the configured limit).
