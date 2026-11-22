@@ -1,7 +1,7 @@
 # ⚡ LivePrep – Your Personal AI English & Communication Coach
 
 > **Powered by Google Gemini 3.8 Live API (`gemini-3.8-live`)**  
-> *An ultra-low latency, bidirectional real-time voice coach for free-flow English conversation. It improves your flow, grammar, vocabulary, pronunciation and confidence on any topic, and adapts to English, Hindi and Hinglish in real-time.*
+> *An ultra-low latency, bidirectional real-time voice coach for free-flow English conversation. It improves your flow, grammar, vocabulary, pronunciation and confidence on any topic. It understands Hindi and Hinglish, and guides every conversation back to English with a sentence you can repeat.*
 
 [![Live Demo Ready](https://img.shields.io/badge/Status-Production%20Ready-emerald.svg)](#quick-start-guide)
 [![Model](https://img.shields.io/badge/Gemini%20Live-gemini--3.8--live-blue.svg)](https://ai.google.dev)
@@ -200,7 +200,7 @@ UI: `#/sessions/<id>/report` shows the overall score, five skill scores, objecti
 **Honesty rules built into the rubric**
 - `pronunciation` is always `null` with "Audio-based pronunciation analysis coming soon" (audio is not stored yet; a real score needs Step 12).
 - The filler metric is labelled *approximate*: transcription can miss fillers.
-- Hindi/Hinglish code-switching is not penalised as a grammar error, only mentioned.
+- Hindi/Hinglish code-switching is not penalised as a grammar error; the live coach instead guides the user back to English with simple words or a sentence to repeat, and the report can suggest the English version of the same idea.
 - Transcript and profile text are treated as untrusted data: sanitised, wrapped in delimiters, and the prompt instructs the model to ignore instructions inside them.
 
 **Setup**: run `alembic upgrade head` to create the `reports` table, and set `REPORT_MODEL` (for example `gemini-2.5-flash`). `REPORT_AUTO_GENERATE=0` disables automatic generation (used by the test suite); `REPORT_LLM_TIMEOUT_SECONDS` (default 45) bounds one model call.
