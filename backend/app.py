@@ -5,6 +5,8 @@ import uuid
 import asyncio
 import logging
 import unicodedata
+import datetime
+from contextlib import asynccontextmanager
 from enum import Enum
 from pathlib import Path
 from typing import AsyncGenerator, Optional
@@ -30,9 +32,12 @@ from repositories import (
     get_report,
     get_previous_ready_report,
     list_progress_reports,
+    list_pending_reports,
+    seconds_used_since,
 )
 from reports import RUBRIC_VERSION, run_report_pipeline
 from tickets import TicketStore, TicketLimitError
+from ratelimit import RateLimitError, SlidingWindowLimiter
 
 load_dotenv()
 
@@ -60,7 +65,17 @@ if not SUPABASE_URL.startswith(("https://", "http://")):
 raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8000")
 ALLOWED_ORIGINS = {orig.strip() for orig in raw_origins.split(",") if orig.strip()}
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Startup work before the first request."""
+    # A restart (deploy, crash, free-tier sleep) kills the in-process report job, so the
+    # stored row would stay "pending" and the page would poll until it gives up.
+    await _recover_pending_reports()
+    yield
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="LivePrep Backend",
     description="Low-Latency Multimodal Voice, Vision, and Tool Agent Backend powered by Gemini Live API",
     version="1.0.0"
@@ -84,6 +99,19 @@ if not REPORT_MODEL:
 
 # Reports still running in the background (kept referenced so they are not garbage collected)
 REPORT_TASKS: set = set()
+
+# Report jobs that may run at once (startup recovery can queue several at a time).
+REPORT_SEMAPHORE = asyncio.Semaphore(max(1, int(os.getenv("MAX_CONCURRENT_REPORT_JOBS", "2"))))
+
+# Rebuilding a report costs up to two model calls, so retries are rate limited per user.
+REPORT_RETRY_LIMITER = SlidingWindowLimiter(
+    max_events=int(os.getenv("REPORT_RETRY_LIMIT", "10")),
+    window_s=float(os.getenv("REPORT_RETRY_WINDOW_SECONDS", "3600")),
+)
+
+# Practice minutes per user per UTC day (0 disables the limit). Each live minute costs
+# money, so one account must not be able to drain the Gemini quota in a single day.
+DAILY_MINUTES_LIMIT = int(os.getenv("DAILY_MINUTES_LIMIT", "30"))
 
 # Concurrency limit for sessions (default 3)
 MAX_CONCURRENT_SESSIONS = int(os.getenv("MAX_CONCURRENT_SESSIONS", "3"))
@@ -196,6 +224,25 @@ def _onboarding_complete(profile) -> bool:
 # --------------------------------------------------------------------------- #
 # /api/me
 # --------------------------------------------------------------------------- #
+def _utc_day_start() -> datetime.datetime:
+    """Midnight UTC today: the daily minute allowance resets at a fixed, explainable time."""
+    now = datetime.datetime.now(datetime.timezone.utc)
+    return now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+async def _practice_usage(db: AsyncSession, user_id) -> dict:
+    """Minutes this user has practised today (UTC) and what is left of the daily limit."""
+    used_s = await seconds_used_since(db, user_id=user_id, since=_utc_day_start())
+    used_minutes = used_s // 60
+    if DAILY_MINUTES_LIMIT <= 0:
+        return {"limit_minutes": None, "used_minutes": used_minutes, "remaining_minutes": None}
+    return {
+        "limit_minutes": DAILY_MINUTES_LIMIT,
+        "used_minutes": used_minutes,
+        "remaining_minutes": max(0, DAILY_MINUTES_LIMIT - used_minutes),
+    }
+
+
 @app.get("/api/me")
 async def read_me(
     user: AuthenticatedUser = Depends(current_user),
@@ -207,6 +254,7 @@ async def read_me(
         "email": user.email,
         "profile": _profile_to_dict(profile),
         "onboarding_complete": _onboarding_complete(profile),
+        "usage": await _practice_usage(db, user.user_id),
     }
 
 
@@ -353,6 +401,16 @@ async def retry_session_report(
 ):
     """Regenerates a report (idempotent). Missing/failed reports are rebuilt on demand."""
     session = await _owned_session_or_404(db, user.user_id, session_id)
+    # Every rebuild is up to two model calls, so the endpoint has its own budget.
+    try:
+        REPORT_RETRY_LIMITER.hit(user.user_id)
+    except RateLimitError as exc:
+        retry_after = int(exc.retry_after_s) + 1
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many report rebuilds. Try again in {retry_after} seconds.",
+            headers={"Retry-After": str(retry_after)},
+        )
     db_factory = AsyncSessionLocal
     if db_factory is None:
         raise HTTPException(
@@ -424,14 +482,39 @@ async def _close_session_record(user_id: uuid.UUID, session_id: uuid.UUID, durat
 async def _report_job(user_id: uuid.UUID, session_id: uuid.UUID) -> None:
     """Background report generation. Never raises: the call handler must not be affected."""
     try:
-        result = await run_report_pipeline(
-            user_id=user_id,
-            session_id=session_id,
-            session_factory=AsyncSessionLocal,
-        )
+        async with REPORT_SEMAPHORE:  # many calls ending together must not stampede the model
+            result = await run_report_pipeline(
+                user_id=user_id,
+                session_id=session_id,
+                session_factory=AsyncSessionLocal,
+            )
         logger.info("Report for session %s: %s", session_id, result)
     except Exception as exc:  # noqa: BLE001
         logger.error("Report job crashed (session=%s): %s", session_id, type(exc).__name__)
+
+
+async def _recover_pending_reports() -> None:
+    """Rebuild reports that a previous process left pending.
+
+    The generation job lives in this process's memory, so a restart (deploy, crash, free
+    tier sleeping) leaves the row at ``pending`` with nobody working on it. Re-running the
+    pipeline is safe: it is idempotent and stores its own failure instead of hanging.
+    """
+    if AsyncSessionLocal is None:
+        return
+    try:
+        async with AsyncSessionLocal() as db:
+            rows = await list_pending_reports(
+                db, limit=int(os.getenv("REPORT_RECOVERY_LIMIT", "20"))
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not look for pending reports: %s", type(exc).__name__)
+        return
+    if not rows:
+        return
+    logger.info("Recovering %d report(s) left pending by an earlier run", len(rows))
+    for row in rows:
+        _schedule_report(row["user_id"], row["session_id"])
 
 
 def _schedule_report(user_id: uuid.UUID, session_id: uuid.UUID) -> None:
@@ -526,6 +609,25 @@ async def websocket_live_endpoint(websocket: WebSocket):
     if AsyncSessionLocal is None:
         logger.error("DATABASE_URL is not configured: refusing to start an unrecorded session")
         await _reject(websocket, 1011, "Session storage is not available right now. Please try again later.")
+        return
+
+    # 5. Daily practice allowance. A database hiccup must never block a call: fail open.
+    try:
+        async with AsyncSessionLocal() as db:
+            usage = await _practice_usage(db, user_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not read today's usage for %s: %s", user_id, type(exc).__name__)
+        usage = None
+    if usage and usage.get("remaining_minutes") is not None and usage["remaining_minutes"] <= 0:
+        logger.info("Daily practice limit reached for %s", user_id)
+        await _reject(
+            websocket,
+            1008,
+            (
+                f"You have used all {usage['limit_minutes']} minutes allowed today. "
+                "Your allowance resets at midnight UTC."
+            ),
+        )
         return
 
     ACTIVE_USERS.add(user_id)

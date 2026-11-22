@@ -19,6 +19,11 @@ services:
         sync: false
       - key: MAX_CONCURRENT_SESSIONS
         value: "3"
+      # Practice minutes per user per UTC day (0 disables the limit).
+      - key: DAILY_MINUTES_LIMIT
+        value: "30"
+      - key: MAX_CONCURRENT_REPORT_JOBS
+        value: "2"
       - key: PORT
         value: 8000
       # Public browser settings for login (baked into the frontend at build time).

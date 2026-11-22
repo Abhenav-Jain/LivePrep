@@ -159,3 +159,18 @@
   - Complete a real call and confirm the report appears after ~10-40 s, the browser tab title/labels are correct, and scores feel fair.
   - Check a session with background noise / Hinglish to confirm fillers and code-switching are treated sensibly.
   - Confirm report retry on a model failure works in the deployed environment.
+
+## Fix: Cost guards and stuck reports (production safety)
+- **Status**: Completed
+- **Branch**: `fix/voice-and-report`
+- **Why**: the live call and report rebuilds cost money per use and nothing stopped one account from draining the quota; a restart left a report `pending` forever.
+- **Files Changed**:
+  - `backend/ratelimit.py` (new): `SlidingWindowLimiter` (per-key budget, injectable clock, bounded key count) and `RateLimitError`.
+  - `backend/app.py`: `lifespan` startup hook that calls `_recover_pending_reports()`; daily practice allowance checked before a session starts (fails open on a database error); `usage` added to `GET /api/me`; report retry limited per user (`429` + `Retry-After`); `REPORT_SEMAPHORE` around report jobs.
+  - `backend/repositories.py`: `seconds_used_since()` and `list_pending_reports()` (pending reports whose session has already ended).
+  - `backend/.env.example`, `render.yaml`, `docker-compose.yml`, `README.md`: `DAILY_MINUTES_LIMIT`, `MAX_CONCURRENT_REPORT_JOBS`, `REPORT_RETRY_LIMIT`, `REPORT_RETRY_WINDOW_SECONDS`, `REPORT_RECOVERY_LIMIT`.
+  - `backend/tests/test_limits_and_recovery.py` (new) and `backend/tests/conftest.py` (clears the retry limiter between tests).
+- **Verification Results** (22 Nov 2026):
+  - `cd backend && python -m pytest -q` -> **208 passed** (195 before).
+  - Tests cover: limiter budget/window/sliding/disabled/per-key isolation; `usage` in `/api/me` with a limit and with the limit disabled; call refused at the limit and allowed below it; retry `429` with `Retry-After`; a foreign session's retry spending no budget; startup recovery rescheduling a pending report and skipping ready reports and live sessions; recovery with no database.
+- **Needs human check**: after a real call, `/api/me` should show today's minutes; sit through the limit once (or set `DAILY_MINUTES_LIMIT=1`) to see the refusal message.

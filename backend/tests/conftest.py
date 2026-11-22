@@ -25,9 +25,11 @@ def _reset_app_state():
 
     app.ticket_store.clear()
     app.ACTIVE_USERS.clear()
+    app.REPORT_RETRY_LIMITER.clear()
     yield
     app.ticket_store.clear()
     app.ACTIVE_USERS.clear()
+    app.REPORT_RETRY_LIMITER.clear()
 
 
 @pytest.fixture

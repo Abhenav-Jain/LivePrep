@@ -270,6 +270,39 @@ async def upsert_report(
     return row
 
 
+async def seconds_used_since(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    since: datetime.datetime,
+) -> int:
+    """Practice seconds recorded for user_id from `since` onwards (finished calls only)."""
+    stmt = select(func.coalesce(func.sum(Session.duration_s), 0)).where(
+        and_(Session.user_id == user_id, Session.started_at >= since)
+    )
+    res = await db.execute(stmt)
+    return int(res.scalar() or 0)
+
+
+async def list_pending_reports(
+    db: AsyncSession,
+    limit: int = 20,
+) -> List[Dict[str, Any]]:
+    """Reports still ``pending`` for a call that has already ended.
+
+    Nobody is working on these: the job lived in the memory of a process that has since
+    restarted, so they would poll forever. The caller re-runs the pipeline for each one.
+    """
+    stmt = (
+        select(Report.user_id, Report.session_id)
+        .join(Session, Session.id == Report.session_id)
+        .where(and_(Report.status == "pending", Session.status != "active"))
+        .order_by(Report.updated_at.desc())
+        .limit(max(1, int(limit)))
+    )
+    res = await db.execute(stmt)
+    return [{"user_id": uid, "session_id": sid} for uid, sid in res.all()]
+
+
 async def get_previous_ready_report(
     db: AsyncSession,
     user_id: uuid.UUID,
