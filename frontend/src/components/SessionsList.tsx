@@ -58,7 +58,7 @@ export const SessionsList: React.FC<SessionsListProps> = ({
           <button
             onClick={onBackToCall}
             className="p-2 rounded-lg bg-surface border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white transition-colors"
-            title="Back to live interview"
+            title="Back to the practice call"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
@@ -77,7 +77,7 @@ export const SessionsList: React.FC<SessionsListProps> = ({
       {loading && (
         <div className="flex flex-col items-center justify-center py-20 text-slate-400 space-y-3">
           <RefreshCw className="w-8 h-8 animate-spin text-primary" />
-          <p className="text-sm">Loading your interview sessions...</p>
+          <p className="text-sm">Loading your sessions...</p>
         </div>
       )}
 
@@ -101,7 +101,7 @@ export const SessionsList: React.FC<SessionsListProps> = ({
           <MessageSquare className="w-12 h-12 mx-auto text-slate-600 mb-3" />
           <h3 className="text-base font-semibold text-slate-200">No sessions yet</h3>
           <p className="text-sm text-slate-400 mt-1 max-w-sm mx-auto">
-            Start a live mock interview to practice your speaking skills and see your transcripts here.
+            Start a live conversation to practise your English and see your transcripts here.
           </p>
           <button
             onClick={onBackToCall}
@@ -122,7 +122,7 @@ export const SessionsList: React.FC<SessionsListProps> = ({
               <div className="space-y-1">
                 <div className="flex items-center space-x-2">
                   <span className="font-semibold text-slate-200 capitalize">
-                    {s.scenario ? s.scenario.replace('_', ' ') : 'General Interview'}
+                    {s.scenario ? s.scenario.replace('_', ' ') : 'Practice session'}
                   </span>
                   <span
                     className={`text-[10px] px-2 py-0.5 rounded-full font-mono uppercase font-bold border ${

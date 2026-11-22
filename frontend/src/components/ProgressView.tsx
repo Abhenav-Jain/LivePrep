@@ -81,7 +81,7 @@ export const ProgressView: React.FC<ProgressViewProps> = ({ onBack, onOpenReport
           <button
             onClick={onBack}
             className="p-2 rounded-lg bg-surface border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white transition-colors"
-            title="Back to live interview"
+            title="Back to the practice call"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
@@ -127,7 +127,7 @@ export const ProgressView: React.FC<ProgressViewProps> = ({ onBack, onOpenReport
           <BarChart3 className="w-12 h-12 mx-auto text-slate-600 mb-3" />
           <h3 className="text-base font-semibold text-slate-200">No scored sessions yet</h3>
           <p className="text-sm text-slate-400 mt-1 max-w-sm mx-auto">
-            Finish a mock interview with at least a few full answers and your scores will appear here.
+            Finish a conversation with at least a few full answers and your scores will appear here.
           </p>
           <button
             onClick={onBack}
@@ -215,7 +215,7 @@ export const ProgressView: React.FC<ProgressViewProps> = ({ onBack, onOpenReport
                 >
                   <div>
                     <div className="text-sm font-medium text-slate-200 capitalize">
-                      {entry.scenario ? entry.scenario.replace('_', ' ') : 'General interview'}
+                      {entry.scenario ? entry.scenario.replace('_', ' ') : 'Practice session'}
                     </div>
                     <div className="text-[11px] text-slate-500">{formatDate(entry.started_at)}</div>
                   </div>

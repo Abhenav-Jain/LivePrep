@@ -1,7 +1,7 @@
 # LivePrep: Agent Rules (read fully at the start of EVERY conversation)
 
 ## Product
-LivePrep is a voice-based AI mock interviewer for students. Stack: FastAPI WebSocket backend + Gemini Live API, React + TypeScript + Vite + Tailwind frontend. Users log in, talk to the AI by voice, see their speech in a live chat transcript, and after each session receive a report on fluency, vocabulary, grammar, communication, pace and pronunciation, with a personal improvement plan.
+LivePrep is a voice-based AI English and communication coach for anyone, technical or non-technical. Stack: FastAPI WebSocket backend + Gemini Live API, React + TypeScript + Vite + Tailwind frontend. Users log in, have a free-flow voice conversation on any topic, see their speech in a live chat transcript, and after each session receive a report on fluency, vocabulary, grammar, communication and pace, with a personal improvement plan. It is not an interview coach: it must never assume the user is a job candidate, test their domain knowledge, or force interview-style questions.
 
 ## Layout
 - `backend/` : `app.py`, `gemini_live.py`, `tools.py`

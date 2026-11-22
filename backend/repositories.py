@@ -11,7 +11,7 @@ async def create_session(
     user_id: uuid.UUID,
     scenario: Optional[str] = None
 ) -> Session:
-    """Creates a new mock interview session for user_id."""
+    """Creates a new practice session for user_id."""
     session = Session(
         id=uuid.uuid4(),
         user_id=user_id,

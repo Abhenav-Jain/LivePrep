@@ -1,7 +1,7 @@
-# ⚡ LivePrep – Your Personal AI Mock Interviewer & Voice Coach
+# ⚡ LivePrep – Your Personal AI English & Communication Coach
 
 > **Powered by Google Gemini 3.8 Live API (`gemini-3.8-live`)**  
-> *An ultra-low latency, bidirectional real-time AI mock interviewer that conducts voice-based interviews, evaluates answers, tracks candidate progress, and adapts to English, Hindi, and Hinglish in real-time.*
+> *An ultra-low latency, bidirectional real-time voice coach for free-flow English conversation. It improves your flow, grammar, vocabulary, pronunciation and confidence on any topic, and adapts to English, Hindi and Hinglish in real-time.*
 
 [![Live Demo Ready](https://img.shields.io/badge/Status-Production%20Ready-emerald.svg)](#quick-start-guide)
 [![Model](https://img.shields.io/badge/Gemini%20Live-gemini--3.8--live-blue.svg)](https://ai.google.dev)
@@ -183,7 +183,7 @@ The ticket store is in memory, so run **one backend instance** for now (see `bac
 When a call ends, the server stores the session and queues a **report job** for it:
 
 1. `backend/reports.py` computes objective metrics in plain Python: user words, speaking time, WPM, average and longest pause, fillers (approximate), type-token ratio, unique words, most repeated words and average answer length.
-2. If the candidate spoke fewer than 30 words, no model is called: the report is stored as `ready` with guidance instead of fake scores.
+2. If the speaker used fewer than 30 words, no model is called: the report is stored as `ready` with guidance instead of fake scores.
 3. Otherwise the transcript, metrics and profile are sent to the text model in `REPORT_MODEL` with the fixed rubric `v1`. The answer must be valid JSON for a strict schema (scores 0-100, exactly 3 strengths, exactly 5 action steps); an invalid answer is retried once, then the report is stored as `failed`.
 4. The result lands in the `reports` table (`pending` -> `ready` / `failed`), owner-scoped like every other query. Re-running the job replaces the row.
 
@@ -195,7 +195,7 @@ Endpoints (all require `Authorization: Bearer <token>` and filter by the token's
 | POST | `/api/sessions/{id}/report/retry` | Regenerate a missing/failed report (idempotent) |
 | GET | `/api/progress?limit=10` | Scores of the latest ready reports, for the trend chart |
 
-UI: `#/sessions/<id>/report` shows the overall score, five skill scores, objective metrics, strengths, grammar fixes, words to upgrade, interview feedback and the 5-step action plan; `#/progress` shows the score trend and skill averages.
+UI: `#/sessions/<id>/report` shows the overall score, five skill scores, objective metrics, strengths, grammar fixes, words to upgrade, communication feedback (clarity, structure, confidence) and the 5-step action plan; `#/progress` shows the score trend and skill averages.
 
 **Honesty rules built into the rubric**
 - `pronunciation` is always `null` with "Audio-based pronunciation analysis coming soon" (audio is not stored yet; a real score needs Step 12).
@@ -252,8 +252,9 @@ gcloud run deploy liveprep \
 2. **Visual Screen Debugging**:
    - Click the **Screen Share** button (monitor icon) and share your code editor or browser tab.
    - Say: *"Look at my screen, what code is open right now?"* or *"Can you spot any syntax issues in this file?"*
-3. **Mock Interview**:
-   - Ask for practice questions or answer an interview prompt: LivePrep gives brief spoken feedback after each answer.
+3. **Free-flow conversation**:
+   - Say: *"Let's talk about my day"* or *"I want to practise English, pick a topic for me."*
+   - LivePrep keeps the conversation going, gently recasts your mistakes and gives one short tip at a time, whatever your background or field.
 4. **Sign out and back in**:
    - Open the account menu (gear icon) and sign out. Your next visit asks for your email again and sends a new code.
 

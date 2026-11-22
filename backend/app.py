@@ -123,9 +123,13 @@ ticket_store = TicketStore(ttl_seconds=float(os.getenv("WS_TICKET_TTL_SECONDS", 
 # Users that currently have a live session (one session per user at a time)
 ACTIVE_USERS: set = set()
 
-# Interview scenarios a client may request; anything else becomes the default
-ALLOWED_SCENARIOS = {"mixed", "hr_round", "technical", "behavioral"}
-DEFAULT_SCENARIO = "mixed"
+# Conversation modes a client may request; anything else becomes the default.
+# The legacy interview modes are still accepted so older clients keep working.
+ALLOWED_SCENARIOS = {
+    "free_talk", "everyday", "storytelling", "discussion", "presentation", "pronunciation",
+    "mixed", "hr_round", "technical", "behavioral",
+}
+DEFAULT_SCENARIO = "free_talk"
 
 # Authentication timeout for WebSocket initial auth message (seconds)
 AUTH_TIMEOUT_SECONDS = float(os.getenv("AUTH_TIMEOUT_SECONDS", "10"))
@@ -159,10 +163,18 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 # Profile models (strict validation: this text later goes into AI prompts)
 # --------------------------------------------------------------------------- #
 class Goal(str, Enum):
+    # Communication goals (what the coach practices with the user).
+    general_english = "general_english"
+    fluency = "fluency"
+    grammar = "grammar"
+    vocabulary = "vocabulary"
+    pronunciation = "pronunciation"
+    confidence = "confidence"
+    public_speaking = "public_speaking"
+    # Legacy values: kept so existing profiles stay editable.
     job_interview = "job_interview"
     campus_placement = "campus_placement"
     ielts_speaking = "ielts_speaking"
-    general_english = "general_english"
 
 
 class Level(str, Enum):

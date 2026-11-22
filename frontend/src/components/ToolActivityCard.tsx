@@ -45,7 +45,7 @@ export const ToolActivityCard: React.FC<ToolActivityCardProps> = ({ toolCalls })
         <div className="flex items-center space-x-2">
           <Wrench className="w-4 h-4 text-emerald-400" />
           <h2 className="text-sm font-semibold tracking-wide text-slate-200">
-            Interview Coaching Tools
+                          Coaching Tools
           </h2>
         </div>
         <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">

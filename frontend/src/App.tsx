@@ -133,7 +133,7 @@ export const App: React.FC = () => {
               </span>
             </div>
             <p className="text-[10px] font-mono text-slate-400 hidden sm:block">
-              Multimodal Real-Time AI Mock Interviewer
+              Your AI English & Communication Coach
             </p>
           </div>
         </div>
@@ -263,7 +263,7 @@ export const App: React.FC = () => {
       {/* Post-Call Banner (if session recently ended and has a session_id) */}
       {status === 'disconnected' && sessionId && route === '#/' && (
         <div className="bg-primary/10 border-b border-primary/20 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs text-blue-200 z-10">
-          <span>Interview call ended. Your report is being prepared.</span>
+          <span>Call ended. Your report is being prepared.</span>
           <div className="flex items-center gap-2">
             <button
               onClick={() => {

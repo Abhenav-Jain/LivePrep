@@ -98,7 +98,7 @@ export const LoginScreen: React.FC = () => {
           <h1 className="text-2xl font-extrabold tracking-wide bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-cyan-400 to-purple-400">
             LivePrep
           </h1>
-          <p className="text-sm text-slate-400">Practice mock interviews out loud with your AI coach.</p>
+          <p className="text-sm text-slate-400">Improve your English and confidence through real conversation with your AI coach.</p>
         </div>
 
         <div className="rounded-2xl bg-surface border border-slate-700/80 shadow-2xl p-6 space-y-5">

@@ -33,8 +33,8 @@ def _analysis(**overrides):
         "strengths": ["Clear structure", "Good examples", "Calm tone"],
         "grammar_mistakes": [],
         "words_to_upgrade": [],
-        "interview_feedback": {
-            "relevance": 75, "structure": 70, "confidence": 65, "comments": "Use STAR.",
+        "communication_feedback": {
+            "clarity": 75, "structure": 70, "confidence": 65, "comments": "Clear ideas.",
         },
         "action_plan": [
             {"step": f"Step {i}", "daily_exercise": "Practise 5 minutes"} for i in range(1, 6)

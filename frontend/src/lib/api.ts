@@ -179,7 +179,15 @@ export interface WordUpgrade {
   alternatives: string[];
 }
 
-export interface InterviewFeedback {
+export interface CommunicationFeedback {
+  clarity: number;
+  structure: number;
+  confidence: number;
+  comments: string;
+}
+
+/** Shape stored by reports generated before the communication-coach rubric. */
+export interface LegacyInterviewFeedback {
   relevance: number;
   structure: number;
   confidence: number;
@@ -200,7 +208,9 @@ export interface ReportAnalysis {
   strengths: string[];
   grammar_mistakes: GrammarMistake[];
   words_to_upgrade: WordUpgrade[];
-  interview_feedback: InterviewFeedback | null;
+  communication_feedback: CommunicationFeedback | null;
+  /** Only on older reports; the UI still reads it. */
+  interview_feedback?: LegacyInterviewFeedback | null;
   action_plan: ActionStep[];
   next_session_focus: string;
   metrics?: ReportMetrics;

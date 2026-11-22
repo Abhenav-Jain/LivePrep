@@ -103,6 +103,16 @@ export const ReportView: React.FC<ReportViewProps> = ({ sessionId, onBack, onOpe
 
   const report = data?.report ?? null;
   const previous = data?.previous?.scores ?? null;
+  // Reports stored before the communication-coach rubric used interview_feedback.
+  const feedback = report?.communication_feedback
+    ?? (report?.interview_feedback
+      ? {
+          clarity: report.interview_feedback.relevance,
+          structure: report.interview_feedback.structure,
+          confidence: report.interview_feedback.confidence,
+          comments: report.interview_feedback.comments,
+        }
+      : null);
 
   const formatDate = (iso: string | null) => {
     if (!iso) return '';
@@ -357,7 +367,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ sessionId, onBack, onOpe
             </div>
           )}
 
-          {/* Strengths + interview feedback */}
+          {/* Strengths + communication feedback */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             <div className="rounded-2xl bg-surface/50 border border-slate-800/80 p-4">
               <h3 className="text-xs font-mono uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
@@ -373,18 +383,18 @@ export const ReportView: React.FC<ReportViewProps> = ({ sessionId, onBack, onOpe
               </ul>
             </div>
 
-            {report.interview_feedback && (
+            {feedback && (
               <div className="rounded-2xl bg-surface/50 border border-slate-800/80 p-4">
                 <h3 className="text-xs font-mono uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
-                  <MessageSquareQuote className="w-3.5 h-3.5 text-purple-400" /> Interview feedback
+                  <MessageSquareQuote className="w-3.5 h-3.5 text-purple-400" /> Communication feedback
                 </h3>
                 <div className="space-y-2.5">
-                  <ScoreBar label="Relevance" value={report.interview_feedback.relevance} />
-                  <ScoreBar label="Structure (STAR)" value={report.interview_feedback.structure} />
-                  <ScoreBar label="Confidence" value={report.interview_feedback.confidence} />
+                  <ScoreBar label="Clarity" value={feedback.clarity} />
+                  <ScoreBar label="Structure" value={feedback.structure} />
+                  <ScoreBar label="Confidence" value={feedback.confidence} />
                 </div>
                 <p className="mt-3 text-xs text-slate-400 leading-relaxed">
-                  {report.interview_feedback.comments}
+                  {feedback.comments}
                 </p>
               </div>
             )}

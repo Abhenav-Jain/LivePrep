@@ -65,7 +65,7 @@ export const SessionTranscriptView: React.FC<SessionTranscriptViewProps> = ({
           </button>
           <div>
             <h2 className="text-xl font-bold text-white tracking-wide">
-              {data?.session.scenario ? data.session.scenario.replace('_', ' ') : 'Interview Transcript'}
+              {data?.session.scenario ? data.session.scenario.replace('_', ' ') : 'Session Transcript'}
             </h2>
             {data && (
               <p className="text-xs text-slate-400 mt-0.5">
@@ -156,7 +156,7 @@ export const SessionTranscriptView: React.FC<SessionTranscriptViewProps> = ({
                 >
                   <div className="flex items-center justify-between gap-4 mb-1 text-[11px] font-mono text-slate-400">
                     <span className="font-semibold text-slate-300">
-                      {isUser ? 'You' : 'Interviewer'}
+                      {isUser ? 'You' : 'Coach'}
                     </span>
                     {turn.started_at_ms !== null && (
                       <span>{Math.round(turn.started_at_ms / 1000)}s</span>

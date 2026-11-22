@@ -8,10 +8,10 @@ interface TranscriptViewProps {
 }
 
 const SUGGESTED_PROMPTS = [
-  "Start a mock behavioral interview for a software engineering role.",
-  "Ask me a technical question on system design.",
-  "Search the web for the latest Gemini 3.8 features.",
-  "Evaluate my communication and give me feedback on my last answer.",
+  "Let's have a free-flow conversation. Ask me about my day.",
+  "I want to practise English. Pick an easy topic for me.",
+  "Let's talk about films, food and travel.",
+  "Correct my grammar gently while we chat.",
 ];
 
 export const TranscriptView: React.FC<TranscriptViewProps> = ({
@@ -97,7 +97,7 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
                       item.sender === 'user' ? 'text-blue-200' : 'text-purple-300'
                     }`}
                   >
-                    {item.sender === 'user' ? 'You' : 'OmniCopilot'}
+                    {item.sender === 'user' ? 'You' : 'Coach'}
                   </span>
                   <span className="text-[10px] font-mono opacity-50 flex items-center space-x-1">
                     <Clock className="w-2.5 h-2.5" />
