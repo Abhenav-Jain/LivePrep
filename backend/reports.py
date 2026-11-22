@@ -262,6 +262,9 @@ SCORING RULES:
 - Be specific and honest; do not inflate scores. Weak sessions get low scores.
 
 CONTENT RULES:
+- scores: one object holding all five sub-scores (fluency, vocabulary, grammar,
+  communication, pace). Do not put the sub-scores at the top level and never omit this
+  object: the report is rejected without it.
 - strengths: exactly 3 short, concrete statements (max 160 characters each).
 - grammar_mistakes: up to 8, each {said, better, rule}, taken from the candidate's own words.
 - words_to_upgrade: up to 10, each {used, alternatives} with 1-5 better alternatives.
@@ -274,6 +277,7 @@ CONTENT RULES:
 
 OUTPUT: one JSON object, no markdown, no code fences, matching exactly:
 {
+  "scores": {"fluency": 0, "vocabulary": 0, "grammar": 0, "communication": 0, "pace": 0},
   "estimated_cefr": "B1",
   "summary": "...",
   "strengths": ["...", "...", "..."],
