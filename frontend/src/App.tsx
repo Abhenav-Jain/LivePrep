@@ -308,7 +308,7 @@ export const App: React.FC = () => {
               onClick={toggleAiMute}
               aria-pressed={isAiMuted}
               className={cx(
-                'grid h-9 w-9 place-items-center rounded-xl border transition-colors',
+                'grid h-10 w-10 place-items-center rounded-xl border transition-colors',
                 isAiMuted
                   ? 'border-amber-400/30 bg-amber-400/10 text-amber-300'
                   : 'border-white/10 bg-white/[0.04] text-slate-400 hover:text-white',
@@ -336,7 +336,7 @@ export const App: React.FC = () => {
 
             <button
               onClick={() => setIsSettingsOpen(true)}
-              className="grid h-9 w-9 place-items-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-400 transition-colors hover:text-white lg:hidden"
+              className="grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-400 transition-colors hover:text-white lg:hidden"
               title="Settings & profile"
               aria-label="Open settings"
             >
@@ -390,7 +390,7 @@ export const App: React.FC = () => {
           ) : (
             /* Practice cockpit */
             <div className="h-full overflow-y-auto lg:overflow-hidden">
-              <div className="mx-auto flex w-full max-w-6xl animate-fade-up flex-col gap-4 px-3 pb-24 pt-4 sm:px-4 lg:h-full lg:flex-row lg:gap-4 lg:pb-4">
+              <div className="mx-auto flex w-full max-w-7xl animate-fade-up flex-col gap-4 px-3 pb-24 pt-4 sm:px-4 lg:h-full lg:flex-row lg:gap-5 lg:pb-4">
                 {/* Session panel */}
                 <section className="panel-strong flex flex-col gap-3 p-4 sm:p-5 lg:h-full lg:min-h-0 lg:w-[400px] lg:flex-none xl:w-[440px]">
                   <UsageCard
@@ -441,7 +441,7 @@ export const App: React.FC = () => {
                     )}
                   </div>
 
-                  <div className="relative flex h-[clamp(160px,26vh,240px)] items-center justify-center overflow-hidden rounded-3xl border border-white/[0.05] bg-black/20 lg:h-auto lg:min-h-0 lg:flex-1">
+                  <div className="relative flex h-[clamp(168px,26vh,240px)] items-center justify-center overflow-hidden rounded-3xl border border-white/[0.05] bg-black/20 lg:h-auto lg:min-h-[150px] lg:flex-1">
                     <div
                       aria-hidden
                       className="pointer-events-none absolute inset-0 animate-breathe"

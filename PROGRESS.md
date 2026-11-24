@@ -269,3 +269,13 @@
 - **Personalisation**: the sidebar greets with "Good morning/afternoon/evening, <first name>" from the account email plus one actionable line that switches to the word-bank due count when cards are waiting.
 - **Verification Results**: `npm run build` → success (484 kB / 135 kB gzip, tsc strict clean); `npm test` → 17 passed. Measured in a real browser at 1366x650: session panel 80–634 px inside a 650 px viewport, "Start session" fully visible at 478–522 px, no "Coaching tools"/"share your screen" text, local reset label rendered. Mobile 390x844: no horizontal overflow.
 - **Needs human check**: a signed-in pass with real usage numbers (the preview shows "unavailable" because the API is not reachable from the cloud workspace), and a live call to confirm the labelled mic toggle reflects the real mute state.
+
+## UI/UX Revamp: Final Polish Pass
+- **Status**: Completed (frontend only)
+
+- **Orb label regression fixed**: the `LIVEPREP READY` pill was being clipped once the stage got short. `.orb-stage` is now a full-height flex stage and the canvas is sized `min(216px, 100% - 40px)` with `aspect-ratio: 1`, so the canvas and its pill always share the available height instead of overflowing it. The stage keeps `lg:min-h-[150px]` on desktop and `clamp(168px, 26vh, 240px)` on mobile.
+- **Transcript polish**: the message list only becomes scrollable once there are turns (`overflow-y-auto` / `overflow-hidden`), which removes the stray scrollbar track on an empty call, and the empty state now closes with a one-line outcome note ("Every call ends with a report: scores, corrections and the new words that go to your word bank.").
+- **Header balance**: mute, echo-shield and settings controls are 40px targets instead of 36px, matching the sidebar row rhythm.
+- **Wider desktop**: the practice cockpit uses `max-w-7xl` with a slightly larger column gap, so the transcript has room on 1600px screens without stretching line length on the labelled pages.
+- **Verification Results**: `npm run build` → success (485 kB / 135 kB gzip, tsc strict clean); `npm test` → 17 passed. Browser measurements: at 1600x800, 1366x650 and 390x844 the `LIVEPREP READY` label exists, is visible and sits fully inside the orb card; "Start session" is inside the viewport at all three sizes; no horizontal overflow.
+- **Needs human check**: signed-in session with real numbers and a live call (mute/label switching still needs a real mic).

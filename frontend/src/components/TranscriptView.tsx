@@ -41,7 +41,13 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
         </span>
       </div>
 
-      <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-4">
+      <div
+        ref={scrollRef}
+        className={cx(
+          'flex-1 space-y-4 p-4',
+          transcripts.length > 0 ? 'overflow-y-auto' : 'overflow-hidden',
+        )}
+      >
         {transcripts.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-4 px-2 py-4 text-center">
             <div className="relative grid h-12 w-12 place-items-center">
@@ -74,6 +80,11 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
                 </button>
               ))}
             </div>
+
+            <p className="max-w-sm pt-1 text-[11px] leading-relaxed text-slate-500">
+              Every call ends with a report: scores, corrections and the new words that go to
+              your word bank.
+            </p>
           </div>
         ) : (
           transcripts.map((item) => {

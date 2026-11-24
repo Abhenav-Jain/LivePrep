@@ -73,10 +73,21 @@
     @apply text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-400;
   }
 
-  /* The orb keeps its canvas resolution but scales down on short screens. */
+  /* The orb scales with the space the panel can spare, label included. */
+  .orb-stage {
+    height: 100%;
+    width: 100%;
+  }
+
+  .orb-stage > div {
+    height: 100%;
+    justify-content: center;
+  }
+
   .orb-stage canvas {
-    width: clamp(112px, 24vh, 216px) !important;
-    height: auto !important;
+    width: auto !important;
+    height: min(216px, calc(100% - 40px)) !important;
+    max-width: calc(100% - 8px);
     aspect-ratio: 1 / 1;
   }
 
