@@ -1,12 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   BookOpen,
-  ChevronDown,
   History,
-  Layers,
   Mic,
   MicOff,
-  Monitor,
   Power,
   Radio,
   Send,
@@ -15,25 +12,20 @@ import {
   ShieldCheck,
   Target,
   TrendingUp,
-  Video,
-  VideoOff,
   Volume2,
   VolumeX,
-  Wrench,
 } from 'lucide-react';
 import { useLiveSession } from './audio/useLiveSession';
 import { useAuth } from './auth/AuthProvider';
 import { VoiceOrb } from './components/VoiceOrb';
-import { ScreenPreview } from './components/ScreenPreview';
 import { TranscriptView } from './components/TranscriptView';
-import { ToolActivityCard } from './components/ToolActivityCard';
 import { SettingsModal } from './components/SettingsModal';
 import { SessionsList } from './components/SessionsList';
 import { SessionTranscriptView } from './components/SessionTranscriptView';
 import { ReportView } from './components/ReportView';
 import { ProgressView } from './components/ProgressView';
 import { WordBankView } from './components/WordBankView';
-import { UsageCard, UsagePill } from './components/UsageMeter';
+import { UsageCard } from './components/UsageMeter';
 import { usePracticeUsage } from './lib/usePracticeUsage';
 import { fetchWordBank } from './lib/api';
 import { cx } from './components/ui';
@@ -52,11 +44,22 @@ const NAV_ITEMS: NavItem[] = [
   { hash: '#/words', label: 'Word bank', icon: <BookOpen className="h-4 w-4" />, isActive: (r) => r === '#/words' },
 ];
 
-const DOCK_TONES = {
-  emerald: 'border-emerald-400/40 bg-emerald-400/15 text-emerald-300',
-  cyan: 'border-cyan-400/40 bg-cyan-400/15 text-cyan-300',
-  violet: 'border-primary/40 bg-primary/15 text-primary-glow',
-} as const;
+/** One-tap goals for the focus field: quicker than typing on a small screen. */
+const FOCUS_PRESETS = ['Past tense', 'Small talk', 'Storytelling', 'Interview prep'];
+
+/** First name from the account email, used only for the greeting. */
+function firstNameFrom(email: string | null): string {
+  const local = (email ?? '').split('@')[0];
+  const first = local.split(/[._\-+\d]/).filter(Boolean)[0] ?? '';
+  return first ? first.charAt(0).toUpperCase() + first.slice(1) : 'there';
+}
+
+function greetingFor(date: Date): string {
+  const hour = date.getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+}
 
 const Brand: React.FC<{ mini?: boolean }> = ({ mini = false }) => (
   <div className="flex items-center gap-2.5">
@@ -66,7 +69,7 @@ const Brand: React.FC<{ mini?: boolean }> = ({ mini = false }) => (
     <div className="leading-none">
       <p className={cx('font-display tracking-tight text-white', mini ? 'text-xl' : 'text-[1.35rem]')}>LivePrep</p>
       {!mini && (
-        <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.16em] text-slate-500">
+        <p className="mt-1 whitespace-nowrap text-[9px] uppercase tracking-[0.12em] text-slate-400">
           AI communication coach
         </p>
       )}
@@ -97,36 +100,10 @@ const SidebarLink: React.FC<{
     </span>
     <span className="flex-1 text-left">{label}</span>
     {badge !== undefined && badge > 0 && (
-      <span className="rounded-full bg-primary/20 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-primary-glow">
+      <span className="rounded-full bg-primary/20 px-1.5 py-0.5 text-[10px] font-semibold text-primary-glow">
         {badge}
       </span>
     )}
-  </button>
-);
-
-const DockButton: React.FC<{
-  label: string;
-  active?: boolean;
-  tone?: keyof typeof DOCK_TONES;
-  disabled?: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}> = ({ label, active = false, tone = 'violet', disabled = false, onClick, children }) => (
-  <button
-    onClick={onClick}
-    disabled={disabled}
-    aria-pressed={active}
-    aria-label={label}
-    title={label}
-    className={cx(
-      'grid h-11 w-11 place-items-center rounded-2xl border transition-all duration-200 active:scale-95',
-      active
-        ? DOCK_TONES[tone]
-        : 'border-white/10 bg-white/[0.04] text-slate-400 hover:bg-white/[0.08] hover:text-white',
-      disabled && 'cursor-not-allowed opacity-35 hover:bg-white/[0.04] hover:text-slate-400',
-    )}
-  >
-    {children}
   </button>
 );
 
@@ -136,26 +113,17 @@ export const App: React.FC = () => {
     statusMessage,
     sessionId,
     transcripts,
-    toolCalls,
     isMicActive,
-    isScreenActive,
-    isCameraActive,
     userVolume,
     agentVolume,
     agentState,
     echoShield,
     isAiMuted,
     toggleAiMute,
-    videoStream,
     connect,
     disconnect,
     toggleMic,
-    startScreenShare,
-    stopScreenShare,
-    startCamera,
-    stopCamera,
     sendTextMessage,
-    captureSnapshot,
     toggleEchoShield,
   } = useLiveSession();
 
@@ -169,7 +137,6 @@ export const App: React.FC = () => {
   const [focus, setFocus] = useState<string>('');
   // Cards due in the word bank: shown as a badge so practice is one click away.
   const [dueCount, setDueCount] = useState<number>(0);
-  const [showTools, setShowTools] = useState<boolean>(false);
 
   // Listen to hash changes for simple routing without an external library
   useEffect(() => {
@@ -199,6 +166,16 @@ export const App: React.FC = () => {
     localStorage.removeItem('omni_gemini_model');
     localStorage.removeItem('omni_liveprep_token');
   }, []);
+
+  const displayName = useMemo(() => firstNameFrom(email), [email]);
+  const greeting = useMemo(() => greetingFor(new Date()), []);
+  const suggestion = useMemo(
+    () =>
+      dueCount > 0
+        ? `${dueCount} word${dueCount === 1 ? '' : 's'} due today — a two-minute review keeps them fresh.`
+        : 'Pick a focus below and talk for ten minutes. Your coach keeps the notes.',
+    [dueCount],
+  );
 
   const handleToggleConnect = () => {
     if (status === 'connected' || status === 'connecting') {
@@ -248,6 +225,19 @@ export const App: React.FC = () => {
       ? 'Connection problem'
       : 'Ready when you are';
 
+  const statusTone =
+    status === 'connected'
+      ? 'bg-emerald-400 shadow-[0_0_12px_2px_rgba(52,211,153,0.5)]'
+      : status === 'connecting'
+      ? 'animate-pulse bg-amber-400'
+      : status === 'error'
+      ? 'bg-rose-500'
+      : 'bg-slate-500';
+
+  const isLive = status === 'connected';
+  // Before a call the mic is simply idle, so a crossed-out icon would read as "broken".
+  const micShowsMuted = isLive && !isMicActive;
+
   return (
     <div className="relative flex h-[100dvh] w-full overflow-hidden">
       {/* Desktop sidebar */}
@@ -256,7 +246,14 @@ export const App: React.FC = () => {
           <Brand />
         </div>
 
-        <nav className="mt-8 space-y-1" aria-label="Main">
+        <div className="mt-7 px-2">
+          <p className="text-[15px] font-semibold leading-snug text-white">
+            {greeting}, {displayName}
+          </p>
+          <p className="mt-1 text-[11px] leading-relaxed text-slate-400">{suggestion}</p>
+        </div>
+
+        <nav className="mt-6 space-y-1" aria-label="Main">
           <p className="eyebrow px-3 pb-2">Workspace</p>
           {NAV_ITEMS.map((item) => (
             <SidebarLink
@@ -270,29 +267,7 @@ export const App: React.FC = () => {
           ))}
         </nav>
 
-        <div className="mt-auto space-y-3">
-          <div className="panel px-3.5 py-3">
-            <div className="flex items-center justify-between">
-              <span className="eyebrow">Status</span>
-              <span className="flex items-center gap-1.5 font-mono text-[10px] capitalize text-slate-400">
-                <span
-                  className={cx(
-                    'h-1.5 w-1.5 rounded-full',
-                    status === 'connected'
-                      ? 'bg-emerald-400'
-                      : status === 'connecting'
-                      ? 'animate-pulse bg-amber-400'
-                      : status === 'error'
-                      ? 'bg-rose-500'
-                      : 'bg-slate-500',
-                  )}
-                />
-                {status}
-              </span>
-            </div>
-            <p className="mt-1.5 text-[11px] leading-snug text-slate-500">{statusLabel}</p>
-          </div>
-
+        <div className="mt-auto">
           <button
             onClick={() => setIsSettingsOpen(true)}
             className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-white/[0.05]"
@@ -319,19 +294,8 @@ export const App: React.FC = () => {
           </div>
 
           <div className="hidden min-w-0 items-center gap-2 lg:flex">
-            <span
-              className={cx(
-                'h-1.5 w-1.5 flex-none rounded-full',
-                status === 'connected'
-                  ? 'bg-emerald-400 shadow-[0_0_12px_2px_rgba(52,211,153,0.5)]'
-                  : status === 'connecting'
-                  ? 'animate-pulse bg-amber-400'
-                  : status === 'error'
-                  ? 'bg-rose-500'
-                  : 'bg-slate-500',
-              )}
-            />
-            <span className="truncate text-xs text-slate-400">{statusLabel}</span>
+            <span className={cx('h-2 w-2 flex-none rounded-full', statusTone)} />
+            <span className="truncate text-sm text-slate-300">{statusLabel}</span>
             {isMicActive && (
               <span className="chip ml-1 border-emerald-400/30 bg-emerald-400/10 text-emerald-300">
                 Mic live
@@ -340,14 +304,6 @@ export const App: React.FC = () => {
           </div>
 
           <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
-            <UsagePill
-              usage={practiceUsage.usage}
-              liveSeconds={practiceUsage.liveSeconds}
-              isLive={status === 'connected'}
-              loading={practiceUsage.loading}
-              error={practiceUsage.error}
-            />
-
             <button
               onClick={toggleAiMute}
               aria-pressed={isAiMuted}
@@ -433,51 +389,59 @@ export const App: React.FC = () => {
             />
           ) : (
             /* Practice cockpit */
-            <div className="h-full overflow-y-auto">
-              <div className="mx-auto flex w-full max-w-6xl animate-fade-up flex-col gap-4 px-3 pb-28 pt-4 sm:px-4 lg:h-full lg:flex-row lg:overflow-hidden lg:pb-4">
+            <div className="h-full overflow-y-auto lg:overflow-hidden">
+              <div className="mx-auto flex w-full max-w-6xl animate-fade-up flex-col gap-4 px-3 pb-24 pt-4 sm:px-4 lg:h-full lg:flex-row lg:gap-4 lg:pb-4">
                 {/* Session panel */}
-                <section className="panel-strong flex flex-col gap-3.5 p-4 sm:p-5 lg:w-[420px] lg:flex-none xl:w-[460px]">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="chip max-w-[70%] truncate normal-case tracking-normal text-slate-300">
-                      <Layers className="h-3 w-3 flex-none text-primary-glow" />
-                      <span className="truncate">{statusMessage}</span>
-                    </span>
-                    {isMicActive && (
-                      <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-emerald-300">
-                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-                        16 kHz
-                      </span>
-                    )}
-                  </div>
-
+                <section className="panel-strong flex flex-col gap-3 p-4 sm:p-5 lg:h-full lg:min-h-0 lg:w-[400px] lg:flex-none xl:w-[440px]">
                   <UsageCard
                     usage={practiceUsage.usage}
                     liveSeconds={practiceUsage.liveSeconds}
-                    isLive={status === 'connected'}
+                    isLive={isLive}
                     loading={practiceUsage.loading}
                     error={practiceUsage.error}
                   />
 
                   <div>
-                    <label htmlFor="focus" className="eyebrow mb-1.5 flex items-center gap-1.5">
-                      <Target className="h-3 w-3 text-cyan-400" />
-                      Today&apos;s focus
-                      <span className="font-sans text-[10px] normal-case tracking-normal text-slate-600">optional</span>
-                    </label>
+                    <div className="mb-1.5 flex items-baseline justify-between gap-2">
+                      <label htmlFor="focus" className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-400">
+                        <Target className="h-3 w-3 text-cyan-400" />
+                        Today&apos;s focus
+                      </label>
+                      <span className="text-[11px] text-slate-500">optional</span>
+                    </div>
                     <input
                       id="focus"
                       type="text"
                       value={focus}
                       onChange={(e) => setFocus(e.target.value)}
                       maxLength={160}
-                      disabled={status === 'connected'}
-                      placeholder="Past tense, telling stories, small talk…"
+                      disabled={isLive}
+                      placeholder="What should we work on today?"
                       title="Your coach starts from this goal and returns to it during the call."
-                      className="field text-xs disabled:opacity-50"
+                      className="field border-white/20 bg-black/40 text-xs disabled:opacity-50"
                     />
+                    {!isLive && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {FOCUS_PRESETS.map((preset) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => setFocus(preset)}
+                            className={cx(
+                              'rounded-full border px-2.5 py-0.5 text-[11px] transition-colors',
+                              focus === preset
+                                ? 'border-primary/50 bg-primary/15 text-primary-glow'
+                                : 'border-white/10 bg-white/[0.03] text-slate-400 hover:border-white/20 hover:text-slate-200',
+                            )}
+                          >
+                            {preset}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
-                  <div className="relative flex min-h-[240px] flex-1 items-center justify-center overflow-hidden rounded-3xl border border-white/[0.05] bg-black/20">
+                  <div className="relative flex h-[clamp(160px,26vh,240px)] items-center justify-center overflow-hidden rounded-3xl border border-white/[0.05] bg-black/20 lg:h-auto lg:min-h-0 lg:flex-1">
                     <div
                       aria-hidden
                       className="pointer-events-none absolute inset-0 animate-breathe"
@@ -486,128 +450,87 @@ export const App: React.FC = () => {
                           'radial-gradient(circle at 50% 52%, rgba(124,108,255,0.22), transparent 62%)',
                       }}
                     />
-                    <VoiceOrb state={agentState} userVolume={userVolume} agentVolume={agentVolume} />
-                    <div className="absolute right-2.5 top-2.5 z-10 max-w-[220px]">
-                      <ScreenPreview
-                        stream={videoStream}
-                        isActive={isScreenActive || isCameraActive}
-                        type={isScreenActive ? 'screen' : 'camera'}
-                        onStop={isScreenActive ? stopScreenShare : stopCamera}
-                        onSnapshot={captureSnapshot}
-                      />
+                    <div className="orb-stage flex items-center justify-center">
+                      <VoiceOrb state={agentState} userVolume={userVolume} agentVolume={agentVolume} />
                     </div>
                   </div>
 
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-center gap-2">
+                  <div className="flex-none space-y-2.5">
+                    <div className="flex items-stretch gap-2">
                       <button
                         onClick={handleToggleConnect}
                         className={cx(
-                          'btn h-11 gap-2 px-5 text-[13px] shadow-lg',
-                          status === 'connected'
+                          'btn h-11 flex-1 gap-2 px-4 text-[13px] shadow-lg',
+                          isLive
                             ? 'bg-rose-600 text-white shadow-rose-600/25 hover:bg-rose-500'
                             : 'btn-primary',
                         )}
                       >
                         <Power className="h-4 w-4" />
-                        <span>{status === 'connected' ? 'End call' : 'Start session'}</span>
+                        <span>{isLive ? 'End session' : status === 'connecting' ? 'Connecting…' : 'Start session'}</span>
                       </button>
 
-                      <DockButton
-                        label={isMicActive ? 'Mute microphone' : 'Unmute microphone'}
-                        active={isMicActive}
-                        tone="emerald"
-                        disabled={status !== 'connected'}
+                      <button
                         onClick={toggleMic}
+                        disabled={!isLive}
+                        aria-pressed={isMicActive}
+                        title={isLive ? 'Toggle your microphone' : 'Your microphone unlocks when the session starts'}
+                        className={cx(
+                          'btn h-11 gap-2 border px-4',
+                          isMicActive
+                            ? 'border-emerald-400/40 bg-emerald-400/15 text-emerald-200'
+                            : 'border-white/[0.12] bg-white/[0.05] text-slate-200 hover:bg-white/[0.09]',
+                          !isLive && 'cursor-not-allowed opacity-45 hover:bg-white/[0.05]',
+                        )}
                       >
-                        {isMicActive ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
-                      </DockButton>
-
-                      <DockButton
-                        label={isScreenActive ? 'Stop screen share' : 'Share your screen'}
-                        active={isScreenActive}
-                        tone="cyan"
-                        disabled={status !== 'connected'}
-                        onClick={isScreenActive ? stopScreenShare : startScreenShare}
-                      >
-                        <Monitor className="h-4 w-4" />
-                      </DockButton>
-
-                      <DockButton
-                        label={isCameraActive ? 'Stop camera' : 'Turn on camera'}
-                        active={isCameraActive}
-                        tone="violet"
-                        disabled={status !== 'connected'}
-                        onClick={isCameraActive ? stopCamera : startCamera}
-                      >
-                        {isCameraActive ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
-                      </DockButton>
+                        {micShowsMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                        <span>{micShowsMuted ? 'Unmute' : 'Mute'}</span>
+                      </button>
                     </div>
 
                     <form onSubmit={handleSendText} className="relative">
                       <input
                         type="text"
                         placeholder={
-                          status === 'connected'
-                            ? 'Type a message, or just speak…'
-                            : 'Start a session to talk with your coach'
+                          isLive ? 'Type a message, or just speak…' : 'Start a session to talk with your coach'
                         }
                         value={inputPrompt}
                         onChange={(e) => setInputPrompt(e.target.value)}
-                        disabled={status !== 'connected'}
+                        disabled={!isLive}
                         aria-label="Message to your coach"
-                        className="field pr-12 disabled:opacity-50"
+                        className="field border-white/15 pr-12 disabled:opacity-50"
                       />
                       <button
                         type="submit"
-                        disabled={status !== 'connected' || !inputPrompt.trim()}
+                        disabled={!isLive || !inputPrompt.trim()}
                         aria-label="Send message"
                         className="absolute right-1.5 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-xl bg-primary text-white transition-all hover:bg-primary-hover disabled:opacity-30"
                       >
                         <Send className="h-3.5 w-3.5" />
                       </button>
                     </form>
+
+                    <p className="text-[11px] leading-snug text-slate-400">
+                      {isLive
+                        ? statusMessage
+                        : 'Mic and chat unlock when the session starts. Headphones give the cleanest audio.'}
+                    </p>
                   </div>
                 </section>
 
-                {/* Transcript + tools */}
-                <section className="flex min-h-[440px] flex-1 flex-col gap-3">
-                  <div className="min-h-[280px] flex-1">
-                    <TranscriptView
-                      transcripts={transcripts}
-                      onSuggestedPromptClick={(prompt) => {
-                        if (status === 'connected') {
-                          sendTextMessage(prompt);
-                        } else {
-                          handleToggleConnect();
-                        }
-                      }}
-                    />
-                  </div>
-
-                  <div className="flex-none">
-                    <button
-                      onClick={() => setShowTools((value) => !value)}
-                      aria-expanded={showTools}
-                      className="flex w-full items-center justify-between rounded-2xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-2.5 transition-colors hover:border-white/10 hover:bg-white/[0.04]"
-                    >
-                      <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-400">
-                        <Wrench className="h-3.5 w-3.5 text-emerald-400" />
-                        Coaching tools
-                        <span className="rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[9px] text-slate-400">
-                          {toolCalls.length}
-                        </span>
-                      </span>
-                      <ChevronDown
-                        className={cx('h-4 w-4 text-slate-500 transition-transform', showTools && 'rotate-180')}
-                      />
-                    </button>
-                    {showTools && (
-                      <div className="mt-2 h-52 animate-scale-in">
-                        <ToolActivityCard toolCalls={toolCalls} />
-                      </div>
-                    )}
-                  </div>
+                {/* Transcript */}
+                <section className="flex min-h-[420px] flex-1 flex-col lg:h-full lg:min-h-0">
+                  <TranscriptView
+                    transcripts={transcripts}
+                    onSuggestedPromptClick={(prompt) => {
+                      setFocus(prompt);
+                      if (isLive) {
+                        sendTextMessage(prompt);
+                      } else {
+                        void connect(prompt);
+                      }
+                    }}
+                  />
                 </section>
               </div>
             </div>
@@ -637,7 +560,7 @@ export const App: React.FC = () => {
                 <span className="flex items-center gap-1">
                   {item.label}
                   {item.hash === '#/words' && dueCount > 0 && (
-                    <span className="rounded-full bg-primary/25 px-1 font-mono text-[9px] text-primary-glow">
+                    <span className="rounded-full bg-primary/25 px-1 text-[9px] text-primary-glow">
                       {dueCount}
                     </span>
                   )}

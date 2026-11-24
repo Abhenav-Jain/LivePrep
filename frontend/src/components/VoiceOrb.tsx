@@ -133,7 +133,7 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({ state, userVolume, agentVolu
         className="w-[180px] h-[180px] sm:w-[240px] sm:h-[240px] transition-transform duration-300"
       />
       <div
-        className={`mt-1 flex items-center space-x-2 px-3.5 py-1 rounded-full bg-surface/90 backdrop-blur-md border text-[11px] font-mono font-medium tracking-wide transition-all duration-500 ${
+        className={`mt-1 flex items-center space-x-2 px-3.5 py-1 rounded-full bg-surface/90 backdrop-blur-md border text-[11px] font-medium tracking-wide transition-all duration-500 ${
           state === 'idle'
             ? 'border-primary/30 shadow-[0_0_28px_-8px_rgba(124,108,255,0.75)]'
             : 'border-slate-800 shadow-lg'

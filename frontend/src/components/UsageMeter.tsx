@@ -6,6 +6,7 @@ import {
   formatDuration,
   limitSecondsFor,
   remainingSecondsFor,
+  resetTimeLabel,
   UsageTone,
   usageTone,
   usedSecondsFor,
@@ -40,7 +41,7 @@ function tooltip(usage: PracticeUsage | null, usedSeconds: number, remainingSeco
   }
   return (
     `Today: ${formatDuration(usedSeconds)} of ${usage.limit_minutes} min used, ` +
-    `${formatDuration(remainingSeconds ?? 0)} left. The allowance resets at midnight UTC.`
+    `${formatDuration(remainingSeconds ?? 0)} left. The allowance resets at ${resetTimeLabel()}.`
   );
 }
 
@@ -54,7 +55,7 @@ export const UsagePill: React.FC<UsageMeterProps> = ({ usage, liveSeconds, isLiv
   if (error && !usage) {
     return (
       <div
-        className="flex items-center gap-1.5 rounded-xl border border-amber-400/30 bg-amber-400/10 px-2.5 py-1.5 font-mono text-[11px] text-amber-300"
+        className="flex items-center gap-1.5 rounded-xl border border-amber-400/30 bg-amber-400/10 px-2.5 py-1.5 text-[11px] text-amber-300"
         title={error}
       >
         <AlertTriangle className="h-3.5 w-3.5" />
@@ -72,7 +73,7 @@ export const UsagePill: React.FC<UsageMeterProps> = ({ usage, liveSeconds, isLiv
   return (
     <div
       className={cx(
-        'flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 font-mono text-[11px] tabular-nums transition-colors',
+        'flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-[11px] tabular-nums transition-colors',
         TONE_PILL[tone],
       )}
       title={tooltip(usage, used, remaining)}
@@ -99,7 +100,7 @@ export const UsageCard: React.FC<UsageMeterProps> = ({ usage, liveSeconds, isLiv
           <Timer className="h-3 w-3 text-cyan-400" />
           Today&apos;s practice
         </span>
-        <span className="font-mono tabular-nums text-slate-200">
+        <span className="tabular-nums text-slate-200">
           {error && !usage
             ? 'unavailable'
             : limit === null
@@ -117,9 +118,9 @@ export const UsageCard: React.FC<UsageMeterProps> = ({ usage, liveSeconds, isLiv
         </div>
       )}
 
-      <div className="mt-2 flex items-center justify-between font-mono text-[10px] text-slate-500">
+      <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
         <span className={isLive ? 'text-emerald-300' : undefined}>
-          {isLive ? `This call ${formatClock(liveSeconds)}` : 'Resets at midnight UTC'}
+          {isLive ? `This call ${formatClock(liveSeconds)}` : `Resets at ${resetTimeLabel()}`}
         </span>
         <span className={tone === 'empty' ? 'text-rose-300' : undefined}>
           {limit === null

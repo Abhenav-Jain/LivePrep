@@ -172,7 +172,7 @@ export const ProgressView: React.FC<ProgressViewProps> = ({ onBack, onOpenReport
           <p className="text-xs leading-relaxed text-slate-300">
             Your weakest area so far is{' '}
             <strong className="font-semibold text-white">{stats.weakest_skill.label}</strong>{' '}
-            <span className="font-mono text-[11px] text-amber-200/80">({stats.weakest_skill.score}/100)</span>. Make it
+            <span className="text-[11px] text-amber-200/80">({stats.weakest_skill.score}/100)</span>. Make it
             today&apos;s focus before you start a call.
           </p>
         </div>
@@ -201,13 +201,13 @@ export const ProgressView: React.FC<ProgressViewProps> = ({ onBack, onOpenReport
                 <div className="eyebrow flex items-center justify-center gap-1.5 sm:justify-start">
                   <Trophy className="h-3 w-3 text-amber-400" /> Best
                 </div>
-                <div className={cx('mt-1 font-display text-2xl tabular-nums', scoreTone(best))}>{best ?? '—'}</div>
+                <div className={cx('mt-1 text-2xl tabular-nums', scoreTone(best))}>{best ?? '—'}</div>
               </div>
               <div>
                 <div className="eyebrow flex items-center justify-center gap-1.5 sm:justify-start">
                   <BarChart3 className="h-3 w-3 text-cyan-400" /> Sessions
                 </div>
-                <div className="mt-1 font-display text-2xl tabular-nums text-white">{entries.length}</div>
+                <div className="mt-1 text-2xl tabular-nums text-white">{entries.length}</div>
               </div>
               <div>
                 <div className="eyebrow flex items-center justify-center gap-1.5 sm:justify-start">
@@ -215,7 +215,7 @@ export const ProgressView: React.FC<ProgressViewProps> = ({ onBack, onOpenReport
                 </div>
                 <div
                   className={cx(
-                    'mt-1 font-display text-2xl tabular-nums',
+                    'mt-1 text-2xl tabular-nums',
                     improvement === null ? 'text-slate-400' : improvement >= 0 ? 'text-emerald-400' : 'text-rose-400',
                   )}
                 >
@@ -259,12 +259,12 @@ export const ProgressView: React.FC<ProgressViewProps> = ({ onBack, onOpenReport
                     <div className="text-sm font-medium capitalize text-slate-200">
                       {entry.scenario ? entry.scenario.replace('_', ' ') : 'Practice session'}
                     </div>
-                    <div className="mt-0.5 font-mono text-[10px] uppercase tracking-wider text-slate-500">
+                    <div className="mt-0.5 text-[10px] uppercase tracking-wider text-slate-500">
                       {formatDate(entry.started_at)}
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className={cx('font-display text-xl tabular-nums', scoreTone(entry.scores.overall))}>
+                    <span className={cx('text-xl tabular-nums', scoreTone(entry.scores.overall))}>
                       {entry.scores.overall ?? '—'}
                     </span>
                     <ArrowRight className="h-4 w-4 text-slate-600 transition-transform group-hover:translate-x-0.5 group-hover:text-slate-300" />

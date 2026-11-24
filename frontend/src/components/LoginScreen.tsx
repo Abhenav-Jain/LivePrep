@@ -43,7 +43,7 @@ const BrandMark: React.FC<{ size?: 'sm' | 'lg' }> = ({ size = 'sm' }) => (
     </div>
     <div className="leading-none">
       <p className={`font-display tracking-tight text-white ${size === 'lg' ? 'text-2xl' : 'text-xl'}`}>LivePrep</p>
-      <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.16em] text-slate-500">AI communication coach</p>
+      <p className="mt-1 text-[9px] uppercase tracking-[0.16em] text-slate-500">AI communication coach</p>
     </div>
   </div>
 );
@@ -150,7 +150,7 @@ export const LoginScreen: React.FC = () => {
             {step === 'email' ? (
               <div className="space-y-5">
                 <div className="space-y-1">
-                  <h2 className="font-display text-2xl text-white">Sign in</h2>
+                  <h2 className="text-xl font-semibold text-white">Sign in</h2>
                   <p className="text-xs leading-relaxed text-slate-400">
                     We email you a one-time link. No password to remember.
                   </p>
@@ -189,9 +189,9 @@ export const LoginScreen: React.FC = () => {
             ) : (
               <div className="space-y-5">
                 <div className="space-y-1">
-                  <h2 className="font-display text-2xl text-white">Check your email</h2>
+                  <h2 className="text-xl font-semibold text-white">Check your email</h2>
                   <p className="text-xs leading-relaxed text-slate-400">
-                    Sent to <span className="font-mono text-slate-200">{normalizedEmail}</span>. Click the link in
+                    Sent to <span className="text-slate-200">{normalizedEmail}</span>. Click the link in
                     that email to sign in (check spam too). If your email shows a code instead, type it below.
                   </p>
                 </div>
@@ -214,7 +214,7 @@ export const LoginScreen: React.FC = () => {
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !busy) void submitCode();
                     }}
-                    className="field text-center font-mono text-lg tracking-[0.35em]"
+                    className="field text-center text-lg tracking-[0.35em]"
                   />
                 </div>
 

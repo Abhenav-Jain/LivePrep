@@ -115,7 +115,7 @@ export const SessionsList: React.FC<SessionsListProps> = ({
                   </span>
                   <span
                     className={cx(
-                      'rounded-full border px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider',
+                      'rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider',
                       s.status === 'completed'
                         ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
                         : 'border-white/10 bg-white/[0.04] text-slate-400',
@@ -124,17 +124,17 @@ export const SessionsList: React.FC<SessionsListProps> = ({
                     {s.status}
                   </span>
                   {s.report_status === 'pending' && (
-                    <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-amber-300">
+                    <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[9px] uppercase tracking-wider text-amber-300">
                       report building
                     </span>
                   )}
                   {s.report_status === 'failed' && (
-                    <span className="rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-rose-300">
+                    <span className="rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[9px] uppercase tracking-wider text-rose-300">
                       report failed
                     </span>
                   )}
                 </div>
-                <div className="flex flex-wrap items-center gap-3 font-mono text-[10px] uppercase tracking-wider text-slate-500">
+                <div className="flex flex-wrap items-center gap-3 text-[10px] uppercase tracking-wider text-slate-500">
                   <span>{formatDate(s.started_at)}</span>
                   <span className="flex items-center gap-1">
                     <Clock className="h-3 w-3" />
@@ -151,7 +151,7 @@ export const SessionsList: React.FC<SessionsListProps> = ({
                 {s.report_status === 'ready' && s.overall_score !== null && s.overall_score !== undefined && (
                   <span
                     className={cx(
-                      'rounded-lg border px-2 py-0.5 font-display text-lg leading-none tabular-nums',
+                      'rounded-lg border px-2 py-0.5 text-lg leading-none tabular-nums',
                       scoreChip(s.overall_score),
                     )}
                     title="Overall report score"

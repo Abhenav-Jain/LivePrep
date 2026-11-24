@@ -70,7 +70,14 @@
   }
 
   .eyebrow {
-    @apply font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500;
+    @apply text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-400;
+  }
+
+  /* The orb keeps its canvas resolution but scales down on short screens. */
+  .orb-stage canvas {
+    width: clamp(112px, 24vh, 216px) !important;
+    height: auto !important;
+    aspect-ratio: 1 / 1;
   }
 
   .btn {
@@ -94,7 +101,7 @@
   }
 
   .chip {
-    @apply inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-slate-400;
+    @apply inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] font-medium text-slate-300;
   }
 
   .skeleton {

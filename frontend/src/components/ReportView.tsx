@@ -174,7 +174,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
             <div className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-primary" />
             <Sparkles className="absolute inset-0 m-auto h-5 w-5 text-primary-glow" />
           </div>
-          <h3 className="font-display text-xl text-white">Your coach is reviewing the call</h3>
+          <h3 className="text-xl text-white">Your coach is reviewing the call</h3>
           <p className="mt-1.5 max-w-md text-xs leading-relaxed text-slate-400">
             Scoring fluency, vocabulary, grammar, communication and pace. This usually takes under a minute.
           </p>
@@ -190,7 +190,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
       {data?.status === 'failed' && (
         <div className="panel flex flex-col items-center border-rose-500/20 px-6 py-14 text-center">
           <AlertCircle className="mb-3 h-9 w-9 text-rose-400" />
-          <h3 className="font-display text-xl text-white">We could not build this report</h3>
+          <h3 className="text-xl text-white">We could not build this report</h3>
           <p className="mt-1.5 max-w-md text-xs leading-relaxed text-slate-400">
             {data.error || 'The analysis failed. Your transcript is safe — try again.'}
           </p>
@@ -205,7 +205,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
       {data?.status === 'missing' && (
         <div className="panel flex flex-col items-center px-6 py-14 text-center">
           <Sparkles className="mb-3 h-9 w-9 text-primary-glow" />
-          <h3 className="font-display text-xl text-white">No report for this session yet</h3>
+          <h3 className="text-xl text-white">No report for this session yet</h3>
           <p className="mt-1.5 max-w-md text-xs leading-relaxed text-slate-400">
             The transcript is saved. Generate the analysis now to see your scores and action plan.
           </p>
@@ -222,7 +222,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
           <SectionCard icon={<Clock className="h-3.5 w-3.5 text-amber-400" />} title="Session too short to score">
             <p className="text-sm leading-relaxed text-slate-300">{report.summary}</p>
             {data.metrics && (
-              <div className="mt-3 flex flex-wrap gap-4 font-mono text-[11px] text-slate-400">
+              <div className="mt-3 flex flex-wrap gap-4 text-[11px] text-slate-400">
                 <span>{data.metrics.user_word_count} words</span>
                 <span>{data.metrics.user_turn_count} answer(s)</span>
                 {data.metrics.words_per_minute !== null && <span>{data.metrics.words_per_minute} wpm</span>}
@@ -272,7 +272,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
               <h3 className="eyebrow mb-2 flex items-center gap-1.5 text-emerald-300/80">
                 <MessageSquareQuote className="h-3.5 w-3.5" /> Your best moment
               </h3>
-              <p className="font-display text-lg italic leading-relaxed text-emerald-50/90">
+              <p className="text-lg italic leading-relaxed text-emerald-50/90">
                 &ldquo;{report.best_moment}&rdquo;
               </p>
               <p className="mt-2 text-[10px] text-emerald-200/45">
@@ -295,7 +295,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
             <div className="rounded-xl border border-dashed border-white/[0.09] bg-white/[0.015] p-3">
               <div className="flex items-baseline justify-between">
                 <span className="text-xs font-medium text-slate-400">Pronunciation</span>
-                <span className="font-mono text-[10px] text-slate-600">soon</span>
+                <span className="text-[10px] text-slate-600">soon</span>
               </div>
               <p className="mt-2 text-[10px] leading-relaxed text-slate-500">
                 {report.notes?.pronunciation || 'Audio-based pronunciation analysis is coming soon.'}
@@ -490,7 +490,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
                     Daily: {step.daily_exercise}
                   </span>
                 </span>
-                <span className="font-mono text-[10px] text-slate-600">{String(i + 1).padStart(2, '0')}</span>
+                <span className="text-[10px] text-slate-600">{String(i + 1).padStart(2, '0')}</span>
               </label>
             );
           })}
@@ -507,10 +507,10 @@ const Metric: React.FC<{ label: string; value: React.ReactNode; suffix?: string;
   title,
 }) => (
   <div title={title}>
-    <div className="font-display text-xl leading-none tabular-nums text-white">
+    <div className="text-xl leading-none tabular-nums text-white">
       {value}
       {suffix && <span className="ml-1 font-sans text-[10px] font-normal text-slate-500">{suffix}</span>}
     </div>
-    <div className="mt-1.5 font-mono text-[9px] uppercase tracking-[0.14em] text-slate-500">{label}</div>
+    <div className="mt-1.5 text-[9px] uppercase tracking-[0.14em] text-slate-500">{label}</div>
   </div>
 );

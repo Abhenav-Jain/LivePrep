@@ -39,7 +39,7 @@ export const ScreenPreview: React.FC<ScreenPreviewProps> = ({
   return (
     <div className="animate-scale-in overflow-hidden rounded-2xl border border-cyan-400/25 bg-surface/90 shadow-2xl backdrop-blur-xl">
       <div className="flex items-center justify-between border-b border-white/[0.07] bg-black/40 px-2.5 py-1.5">
-        <div className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-wider text-cyan-300">
+        <div className="flex items-center gap-1.5 text-[9px] uppercase tracking-wider text-cyan-300">
           <Eye className="h-3 w-3 animate-pulse" />
           <span>{type === 'screen' ? 'Screen' : 'Camera'}</span>
         </div>
@@ -71,7 +71,7 @@ export const ScreenPreview: React.FC<ScreenPreviewProps> = ({
 
       <div className="relative flex aspect-video max-h-48 items-center justify-center bg-black sm:max-h-56">
         <video ref={videoRef} autoPlay playsInline muted className="h-full w-full object-contain" />
-        <div className="absolute bottom-1.5 left-1.5 flex items-center gap-1.5 rounded-md border border-white/10 bg-black/70 px-1.5 py-0.5 font-mono text-[9px] text-slate-300 backdrop-blur">
+        <div className="absolute bottom-1.5 left-1.5 flex items-center gap-1.5 rounded-md border border-white/10 bg-black/70 px-1.5 py-0.5 text-[9px] text-slate-300 backdrop-blur">
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
           <span>Adaptive frames</span>
         </div>

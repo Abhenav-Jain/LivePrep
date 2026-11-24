@@ -44,7 +44,7 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
       )}
       <div>
         {eyebrow && <p className="eyebrow mb-1.5">{eyebrow}</p>}
-        <h1 className="flex items-center gap-2.5 font-display text-[1.9rem] leading-none text-white sm:text-[2.2rem]">
+        <h1 className="flex items-center gap-2.5 text-[1.7rem] font-semibold leading-tight tracking-tight text-white sm:text-[1.9rem]">
           {icon}
           <span>{title}</span>
         </h1>
@@ -105,7 +105,7 @@ export const StatTile: React.FC<{
       <span className="eyebrow">{label}</span>
       {icon}
     </div>
-    <div className={cx('mt-2 font-display text-[1.75rem] leading-none tabular-nums text-white', valueClassName)}>
+    <div className={cx('mt-2 text-[1.6rem] font-semibold leading-none tabular-nums text-white', valueClassName)}>
       {value}
     </div>
     {typeof progress === 'number' && (

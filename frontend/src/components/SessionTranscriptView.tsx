@@ -126,11 +126,11 @@ export const SessionTranscriptView: React.FC<SessionTranscriptViewProps> = ({
                   )}
                 >
                   <div className="mb-1 flex items-center justify-between gap-4">
-                    <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-slate-400">
+                    <span className="text-[9px] uppercase tracking-[0.16em] text-slate-400">
                       {isUser ? 'You' : 'Coach'}
                     </span>
                     {turn.started_at_ms !== null && (
-                      <span className="font-mono text-[9px] text-slate-500">
+                      <span className="text-[9px] text-slate-500">
                         {Math.round(turn.started_at_ms / 1000)}s
                       </span>
                     )}

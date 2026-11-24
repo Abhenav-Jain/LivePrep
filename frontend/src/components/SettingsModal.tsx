@@ -54,7 +54,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, e
         <div className="space-y-3 p-5">
           <div>
             <p className="eyebrow mb-1.5">Signed in as</p>
-            <p className="break-all rounded-xl border border-white/[0.07] bg-black/30 px-3.5 py-2.5 font-mono text-[13px] text-slate-100">
+            <p className="break-all rounded-xl border border-white/[0.07] bg-black/30 px-3.5 py-2.5 text-[13px] text-slate-100">
               {email ?? 'Unknown'}
             </p>
           </div>

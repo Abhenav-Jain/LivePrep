@@ -229,7 +229,7 @@ export const WordBankView: React.FC<WordBankViewProps> = ({ onBack }) => {
             <p className="eyebrow mb-2">
               {current.source === 'grammar' ? 'Correction to fix' : 'Say it a better way'}
             </p>
-            <p className="font-display text-[2rem] leading-tight text-white sm:text-[2.4rem]">{current.term}</p>
+            <p className="text-[2rem] leading-tight text-white sm:text-[2.4rem]">{current.term}</p>
 
             {revealed ? (
               <div className="mt-5 space-y-3">
@@ -385,18 +385,18 @@ export const WordBankView: React.FC<WordBankViewProps> = ({ onBack }) => {
                       <span className="break-words text-sm font-medium text-slate-200">{item.term}</span>
                       <span
                         className={cx(
-                          'rounded-full border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider',
+                          'rounded-full border px-1.5 py-0.5 text-[9px] uppercase tracking-wider',
                           STATUS_STYLES[item.status] ?? STATUS_STYLES.new,
                         )}
                       >
                         {item.status}
                       </span>
-                      <span className="font-mono text-[10px] text-slate-500">
+                      <span className="text-[10px] text-slate-500">
                         {SOURCE_LABEL[item.source] ?? item.source}
                       </span>
                       <span
                         className={cx(
-                          'font-mono text-[10px]',
+                          'text-[10px]',
                           item.due ? 'text-cyan-300' : 'text-slate-500',
                         )}
                       >

@@ -59,7 +59,7 @@ export const ToolActivityCard: React.FC<ToolActivityCardProps> = ({ toolCalls })
           <Wrench className="h-3.5 w-3.5 text-emerald-400" />
           <h2 className="text-[12px] font-semibold text-slate-200">Coaching tools</h2>
         </div>
-        <span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-emerald-300">
+        <span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2 py-0.5 text-[9px] uppercase tracking-wider text-emerald-300">
           {toolCalls.length} executed
         </span>
       </div>
@@ -83,8 +83,8 @@ export const ToolActivityCard: React.FC<ToolActivityCardProps> = ({ toolCalls })
                     {getToolIcon(tool.name)}
                   </span>
                   <span className="min-w-0">
-                    <span className="block truncate font-mono text-[11px] text-slate-200">{tool.name}</span>
-                    <span className="block font-mono text-[9px] text-slate-600">
+                    <span className="block truncate text-[11px] text-slate-200">{tool.name}</span>
+                    <span className="block text-[9px] text-slate-600">
                       {tool.callId.slice(-8)}
                     </span>
                   </span>
@@ -92,17 +92,17 @@ export const ToolActivityCard: React.FC<ToolActivityCardProps> = ({ toolCalls })
 
                 <span className="flex flex-none items-center gap-2.5">
                   {tool.status === 'running' ? (
-                    <span className="flex items-center gap-1 font-mono text-[10px] text-amber-300">
+                    <span className="flex items-center gap-1 text-[10px] text-amber-300">
                       <Loader2 className="h-3 w-3 animate-spin" />
                       running
                     </span>
                   ) : tool.status === 'completed' ? (
-                    <span className="flex items-center gap-1 font-mono text-[10px] text-emerald-300">
+                    <span className="flex items-center gap-1 text-[10px] text-emerald-300">
                       <CheckCircle2 className="h-3 w-3" />
                       {duration ? `${duration}ms` : 'done'}
                     </span>
                   ) : (
-                    <span className="flex items-center gap-1 font-mono text-[10px] text-rose-300">
+                    <span className="flex items-center gap-1 text-[10px] text-rose-300">
                       <AlertCircle className="h-3 w-3" />
                       error
                     </span>
@@ -119,7 +119,7 @@ export const ToolActivityCard: React.FC<ToolActivityCardProps> = ({ toolCalls })
                 <div className="mt-2.5 space-y-2 border-t border-white/[0.06] pt-2.5">
                   <div>
                     <span className="eyebrow block pb-1">Arguments</span>
-                    <pre className="overflow-x-auto rounded-lg border border-white/[0.07] bg-black/40 p-2 font-mono text-[10px] text-cyan-200">
+                    <pre className="overflow-x-auto rounded-lg border border-white/[0.07] bg-black/40 p-2 text-[10px] text-cyan-200">
                       {JSON.stringify(tool.args, null, 2)}
                     </pre>
                   </div>
@@ -129,7 +129,7 @@ export const ToolActivityCard: React.FC<ToolActivityCardProps> = ({ toolCalls })
                       <span className="eyebrow block pb-1">Result</span>
                       <pre
                         className={cx(
-                          'max-h-36 overflow-auto rounded-lg border border-white/[0.07] bg-black/40 p-2 font-mono text-[10px] text-emerald-200',
+                          'max-h-36 overflow-auto rounded-lg border border-white/[0.07] bg-black/40 p-2 text-[10px] text-emerald-200',
                         )}
                       >
                         {typeof tool.result === 'object'

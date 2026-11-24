@@ -53,6 +53,19 @@ export function formatDuration(totalSeconds: number): string {
   return `${h}h ${m % 60}m`;
 }
 
+/**
+ * Local clock time at which the daily allowance resets.
+ *
+ * The server resets at midnight UTC, which is 5:30 am in India — so the label is converted to
+ * the learner's own timezone instead of quoting UTC.
+ */
+export function resetTimeLabel(now: Date = new Date()): string {
+  const nextUtcMidnight = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0),
+  );
+  return nextUtcMidnight.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
 /** Clock text for a live timer: "0:45", "27:30". */
 export function formatClock(totalSeconds: number): string {
   const s = Math.max(0, Math.floor(totalSeconds));

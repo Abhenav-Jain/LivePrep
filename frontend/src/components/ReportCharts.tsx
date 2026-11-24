@@ -49,10 +49,10 @@ export const ScoreRing: React.FC<ScoreRingProps> = ({ value, size = 132, caption
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className={cx('font-display text-[2.6rem] leading-none tabular-nums', scoreTone(value))}>
+          <span className={cx('text-[2.6rem] leading-none tabular-nums', scoreTone(value))}>
             {value === null ? '—' : Math.round(value)}
           </span>
-          <span className="mt-1 font-mono text-[9px] uppercase tracking-[0.16em] text-slate-500">{caption}</span>
+          <span className="mt-1 text-[9px] uppercase tracking-[0.16em] text-slate-500">{caption}</span>
         </div>
       </div>
       {sublabel && <span className="mt-2 text-xs text-slate-400">{sublabel}</span>}
@@ -78,11 +78,11 @@ export const ScoreBar: React.FC<ScoreBarProps> = ({ label, value, previous, hint
         <span className="text-xs font-medium text-slate-300">{label}</span>
         <span className="flex items-center gap-1.5">
           {delta !== null && delta !== 0 && (
-            <span className={cx('font-mono text-[10px]', delta > 0 ? 'text-emerald-400' : 'text-rose-400')}>
+            <span className={cx('text-[10px]', delta > 0 ? 'text-emerald-400' : 'text-rose-400')}>
               {delta > 0 ? '▲' : '▼'} {Math.abs(Math.round(delta))}
             </span>
           )}
-          <span className={cx('font-mono text-sm font-bold tabular-nums', scoreTone(value))}>
+          <span className={cx('text-sm font-bold tabular-nums', scoreTone(value))}>
             {value === null ? '—' : Math.round(value)}
           </span>
         </span>
