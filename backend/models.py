@@ -133,6 +133,49 @@ class Report(Base):
     )
 
 
+class VocabularyItem(Base):
+    """One saved word or correction the learner practises with spaced repetition.
+
+    Cards are created automatically from a finished report (see ``wordbank.extract_items``)
+    or added by hand. ``term_key`` is the case-insensitive de-duplication key, so the same
+    word never appears twice for one user even if two reports suggest it.
+    """
+    __tablename__ = "vocabulary_items"
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(GUID, nullable=False)
+    term: Mapped[str] = mapped_column(String(120), nullable=False)
+    term_key: Mapped[str] = mapped_column(String(120), nullable=False)
+    alternatives: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(String(20), nullable=False, default="vocabulary")
+    session_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        GUID, ForeignKey("sessions.id", ondelete="SET NULL"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="new")
+    review_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    correct_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    interval_days: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    next_review_at: Mapped[Optional[datetime.datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc)
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.datetime.now(datetime.timezone.utc),
+        onupdate=lambda: datetime.datetime.now(datetime.timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("idx_vocab_user_id", "user_id"),
+        UniqueConstraint("user_id", "term_key", name="uq_vocab_user_term"),
+    )
+
+
 class Turn(Base):
     __tablename__ = "turns"
 

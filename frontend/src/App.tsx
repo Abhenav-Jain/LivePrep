@@ -16,6 +16,8 @@ import {
   VolumeX,
   History,
   TrendingUp,
+  BookOpen,
+  Target,
 } from 'lucide-react';
 import { useLiveSession } from './audio/useLiveSession';
 import { useAuth } from './auth/AuthProvider';
@@ -28,8 +30,10 @@ import { SessionsList } from './components/SessionsList';
 import { SessionTranscriptView } from './components/SessionTranscriptView';
 import { ReportView } from './components/ReportView';
 import { ProgressView } from './components/ProgressView';
+import { WordBankView } from './components/WordBankView';
 import { UsageCard, UsagePill } from './components/UsageMeter';
 import { usePracticeUsage } from './lib/usePracticeUsage';
+import { fetchWordBank } from './lib/api';
 
 export const App: React.FC = () => {
   const {
@@ -66,6 +70,10 @@ export const App: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [inputPrompt, setInputPrompt] = useState<string>('');
   const [route, setRoute] = useState<string>(() => window.location.hash || '#/');
+  // Optional goal the learner sets before a call; the coach starts from it.
+  const [focus, setFocus] = useState<string>('');
+  // Cards due in the word bank: shown as a badge so practice is one click away.
+  const [dueCount, setDueCount] = useState<number>(0);
 
   // Listen to hash changes for simple routing without an external library
   useEffect(() => {
@@ -73,6 +81,21 @@ export const App: React.FC = () => {
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
+
+  // Refresh the word-bank badge when the page changes (a finished practice empties it).
+  useEffect(() => {
+    let cancelled = false;
+    void fetchWordBank()
+      .then((data) => {
+        if (!cancelled) setDueCount(data.summary.due);
+      })
+      .catch(() => {
+        /* badge is decoration: a failed count must not disturb the app */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [route]);
 
   // Purge deprecated storage keys (old API key, model choice and the retired shared token)
   useEffect(() => {
@@ -85,7 +108,7 @@ export const App: React.FC = () => {
     if (status === 'connected' || status === 'connecting') {
       disconnect();
     } else {
-      void connect();
+      void connect(focus);
     }
   };
 
@@ -106,6 +129,7 @@ export const App: React.FC = () => {
   // Determine current page
   const isSessionsList = route === '#/sessions';
   const isProgressView = route === '#/progress';
+  const isWordBankView = route === '#/words';
   const isReportView = route.startsWith('#/sessions/') && route.endsWith('/report');
   const reportSessionId = isReportView
     ? route.replace('#/sessions/', '').replace('/report', '')
@@ -178,6 +202,24 @@ export const App: React.FC = () => {
             <TrendingUp className="w-3.5 h-3.5" />
             <span>Progress</span>
           </button>
+          <button
+            onClick={() => {
+              window.location.hash = '#/words';
+            }}
+            className={`flex items-center space-x-1.5 px-3 py-1 rounded-lg font-medium transition-colors ${
+              isWordBankView
+                ? 'bg-primary text-white shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+            <span>Word Bank</span>
+            {dueCount > 0 && (
+              <span className="px-1.5 rounded-full bg-cyan-500/20 border border-cyan-500/40 text-cyan-200 text-[9px] font-mono">
+                {dueCount}
+              </span>
+            )}
+          </button>
         </nav>
 
         <div className="flex items-center space-x-2 sm:space-x-3">
@@ -191,7 +233,7 @@ export const App: React.FC = () => {
           />
 
           {/* Main Quick Action Header Power Button (only shown in live view) */}
-          {!route.startsWith('#/sessions') && !isProgressView && (
+          {!route.startsWith('#/sessions') && !isProgressView && !isWordBankView && (
             <button
               onClick={handleToggleConnect}
               className={`flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl font-bold text-xs transition-all shadow-md ${
@@ -286,7 +328,13 @@ export const App: React.FC = () => {
       )}
 
       {/* Route Views */}
-      {isProgressView ? (
+      {isWordBankView ? (
+        <WordBankView
+          onBack={() => {
+            window.location.hash = '#/';
+          }}
+        />
+      ) : isProgressView ? (
         <ProgressView
           onBack={() => {
             window.location.hash = '#/';
@@ -315,6 +363,9 @@ export const App: React.FC = () => {
           }}
           onOpenTranscript={(id) => {
             window.location.hash = `#/sessions/${id}`;
+          }}
+          onOpenWordBank={() => {
+            window.location.hash = '#/words';
           }}
         />
       ) : isTranscriptView && transcriptSessionId ? (
@@ -356,6 +407,21 @@ export const App: React.FC = () => {
               loading={practiceUsage.loading}
               error={practiceUsage.error}
             />
+
+            {/* Today's focus: folded into the coach's context when the call starts */}
+            <div className="flex items-center gap-2">
+              <Target className="w-3.5 h-3.5 text-cyan-400 flex-shrink-0" />
+              <input
+                type="text"
+                value={focus}
+                onChange={(e) => setFocus(e.target.value)}
+                maxLength={160}
+                disabled={status === 'connected'}
+                placeholder="Today's focus (optional): past tense, telling stories…"
+                title="Your coach starts from this goal and returns to it during the call."
+                className="w-full px-3 py-2 rounded-xl bg-slate-900/80 border border-slate-800 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-primary/60 disabled:opacity-50"
+              />
+            </div>
 
             {/* Center Stage: Voice Orb & PiP overlay */}
             <div className="relative flex-1 flex flex-col items-center justify-center min-h-[220px]">

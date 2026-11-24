@@ -377,8 +377,10 @@ export function useLiveSession() {
     }
   };
 
-  // Connect to WebSocket Gateway with resilient state
-  const connect = useCallback(async () => {
+  // Connect to WebSocket Gateway with resilient state.
+  // `focus` is the learner's optional goal for this call ("past tense"); it only travels
+  // to the server, which folds it into the coach's context.
+  const connect = useCallback(async (focus?: string) => {
     if (connectingRef.current) return; // ignore double clicks while the ticket is requested
     connectingRef.current = true;
 
@@ -417,7 +419,14 @@ export function useLiveSession() {
     ws.onopen = () => {
       // First message: the one-time login ticket. The microphone starts only after the server
       // confirms the call, so no audio is sent before the login succeeded.
-      ws.send(JSON.stringify({ type: 'auth', ticket }));
+      const trimmedFocus = typeof focus === 'string' ? focus.trim().slice(0, 160) : '';
+      ws.send(
+        JSON.stringify({
+          type: 'auth',
+          ticket,
+          ...(trimmedFocus ? { focus: trimmedFocus } : {}),
+        }),
+      );
       setStatusMessage('Authenticating...');
     };
 

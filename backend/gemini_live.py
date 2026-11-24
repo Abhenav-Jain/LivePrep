@@ -11,6 +11,7 @@ from google import genai
 from google.genai import types
 from tools import get_gemini_tools, TOOL_DISPATCHER
 from transcript import TurnAssembler, Turn
+from coach_context import compose_system_instruction
 
 logger = logging.getLogger("liveprep-live")
 
@@ -95,9 +96,13 @@ class GeminiLiveBridge:
         user_id: Optional[str] = None,
         on_turn: Optional[Callable[[Turn], Awaitable[None]]] = None,
         assembler: Optional[TurnAssembler] = None,
+        learner_context: Optional[str] = None,
     ):
         self.api_key = api_key
         self.model = model
+        # Personalisation built from the learner's profile, last report and word bank.
+        # Already sanitised and length-capped by coach_context.build_learner_context().
+        self.learner_context = learner_context or ""
         # Set by the server after authentication. Used for logging only: the model never sees them.
         self.session_id = session_id
         self.user_id = user_id
@@ -181,7 +186,11 @@ class GeminiLiveBridge:
         config = types.LiveConnectConfig(
             response_modalities=[types.Modality.AUDIO],
             system_instruction=types.Content(
-                parts=[types.Part.from_text(text=SYSTEM_INSTRUCTION)]
+                parts=[
+                    types.Part.from_text(
+                        text=compose_system_instruction(SYSTEM_INSTRUCTION, self.learner_context)
+                    )
+                ]
             ),
             input_audio_transcription=types.AudioTranscriptionConfig(),
             output_audio_transcription=types.AudioTranscriptionConfig(),

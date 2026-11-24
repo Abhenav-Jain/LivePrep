@@ -34,7 +34,8 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-from repositories import get_profile, get_session, get_turns, upsert_report
+from repositories import get_profile, get_session, get_turns, upsert_report, sync_wordbank_from_report
+from wordbank import extract_items as extract_wordbank_items
 
 logger = logging.getLogger("liveprep-reports")
 
@@ -122,6 +123,8 @@ class ReportAnalysis(_ModelAnswer):
     communication_feedback: CommunicationFeedback
     action_plan: list[ActionStep] = Field(min_length=3, max_length=7)
     next_session_focus: str = Field(min_length=1, max_length=300)
+    # Optional so an older/short model answer still validates; the UI simply omits it.
+    best_moment: Optional[str] = Field(default=None, max_length=300)
 
     @field_validator("estimated_cefr", mode="before")
     @classmethod
@@ -278,6 +281,10 @@ CONTENT RULES:
   short comment on how clearly the ideas came across and how confident the speaker sounded.
 - action_plan: exactly 5 steps, each {step, daily_exercise} - practical, doable today.
 - next_session_focus: one sentence describing what to practise next time.
+- best_moment: the single best sentence the speaker actually said, copied verbatim and
+  shortened if needed (max 300 characters), with no quotation marks around it. Choose a
+  sentence that shows a real strength; if the transcript is too weak, use the clearest
+  sentence they produced.
 - estimated_cefr: one of A1, A2, B1, B2, C1, C2.
 - summary: 2-4 sentences addressed to the speaker ("you").
 
@@ -291,7 +298,8 @@ OUTPUT: one JSON object, no markdown, no code fences, matching exactly:
   "words_to_upgrade": [{"used": "...", "alternatives": ["...", "..."]}],
   "communication_feedback": {"clarity": 0, "structure": 0, "confidence": 0, "comments": "..."},
   "action_plan": [{"step": "...", "daily_exercise": "..."}],
-  "next_session_focus": "..."
+  "next_session_focus": "...",
+  "best_moment": "..."
 }
 """.strip()
 
@@ -408,6 +416,7 @@ def _assemble_report(analysis: ReportAnalysis, metrics: dict) -> dict:
         "communication_feedback": analysis.communication_feedback.model_dump(),
         "action_plan": [s.model_dump() for s in analysis.action_plan],
         "next_session_focus": analysis.next_session_focus,
+        "best_moment": analysis.best_moment,
         "metrics": metrics,
         "notes": {"pronunciation": PRONUNCIATION_NOTE, "filler": FILLER_NOTE},
     }
@@ -450,6 +459,7 @@ def _too_short_report(metrics: dict) -> dict:
             },
         ],
         "next_session_focus": "Speak for at least 30 seconds at a time so the coach can score you.",
+        "best_moment": None,
         "metrics": metrics,
         "notes": {"pronunciation": PRONUNCIATION_NOTE, "filler": FILLER_NOTE},
     }
@@ -660,10 +670,35 @@ async def _store(
                 error=error,
             )
             await db.commit()
+        if status == "ready" and report is not None:
+            await _sync_wordbank(session_factory, user_id, session_id, report)
         return status
     except Exception as exc:  # noqa: BLE001
         logger.error("Could not store report (session=%s): %s", session_id, type(exc).__name__)
         return "failed"
+
+
+async def _sync_wordbank(
+    session_factory: Any,
+    user_id: uuid.UUID,
+    session_id: uuid.UUID,
+    report: dict,
+) -> None:
+    """Copy the report's words and corrections into the learner's word bank.
+
+    Best effort on purpose: a word-bank problem must never mark a finished report as
+    failed, so every error is logged and swallowed.
+    """
+    try:
+        items = extract_wordbank_items(report)
+        if not items:
+            return
+        async with session_factory() as db:
+            created = await sync_wordbank_from_report(db, user_id, session_id, items)
+            await db.commit()
+        logger.info("Word bank: %d new card(s) for session %s", created, session_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Word bank sync failed (session=%s): %s", session_id, type(exc).__name__)
 
 
 def _error_cause(exc: BaseException) -> str:

@@ -2,8 +2,9 @@ import uuid
 import datetime
 from typing import Optional, List, Dict, Any
 from sqlalchemy import select, and_, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from models import Session, Turn, Profile, Report
+from models import Session, Turn, Profile, Report, VocabularyItem
 
 
 async def create_session(
@@ -371,3 +372,165 @@ async def list_progress_reports(
             },
         })
     return out
+
+
+async def latest_ready_report(db: AsyncSession, user_id: uuid.UUID) -> Optional[dict]:
+    """The stored analysis of the user's most recent ready report, or None."""
+    stmt = (
+        select(Report.report_json)
+        .join(Session, Session.id == Report.session_id)
+        .where(and_(Report.user_id == user_id, Report.status == "ready"))
+        .order_by(Session.started_at.desc())
+        .limit(1)
+    )
+    res = await db.execute(stmt)
+    row = res.first()
+    if row is None or not isinstance(row[0], dict):
+        return None
+    return row[0]
+
+
+async def list_sessions_for_stats(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    since: Optional[datetime.datetime] = None,
+    limit: int = 2000,
+) -> List[Dict[str, Any]]:
+    """Started_at/duration of the user's sessions, newest first (for streaks and totals)."""
+    stmt = select(Session.started_at, Session.duration_s).where(Session.user_id == user_id)
+    if since is not None:
+        stmt = stmt.where(Session.started_at >= since)
+    stmt = stmt.order_by(Session.started_at.desc()).limit(max(1, int(limit)))
+    res = await db.execute(stmt)
+    return [{"started_at": started_at, "duration_s": duration_s} for started_at, duration_s in res.all()]
+
+
+# --------------------------------------------------------------------------- #
+# Word bank (v2)
+# --------------------------------------------------------------------------- #
+async def list_wordbank(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    limit: int = 200,
+    offset: int = 0,
+) -> List[VocabularyItem]:
+    """All cards owned by user_id, newest first."""
+    stmt = (
+        select(VocabularyItem)
+        .where(VocabularyItem.user_id == user_id)
+        .order_by(VocabularyItem.created_at.desc(), VocabularyItem.id.desc())
+        .limit(max(1, int(limit)))
+        .offset(max(0, int(offset)))
+    )
+    res = await db.execute(stmt)
+    return list(res.scalars().all())
+
+
+async def get_wordbank_item(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    item_id: int,
+) -> Optional[VocabularyItem]:
+    """One card strictly owned by user_id, or None (no ownership leak either way)."""
+    stmt = select(VocabularyItem).where(
+        and_(VocabularyItem.id == item_id, VocabularyItem.user_id == user_id)
+    )
+    res = await db.execute(stmt)
+    return res.scalar_one_or_none()
+
+
+async def add_wordbank_item(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    *,
+    term: str,
+    term_key: str,
+    alternatives: Optional[list],
+    note: Optional[str],
+    source: str = "vocabulary",
+    session_id: Optional[uuid.UUID] = None,
+) -> tuple[VocabularyItem, bool]:
+    """Create a card, or return the existing one for the same word.
+
+    Returns ``(row, created)``. Existing cards keep their review history untouched, but a
+    missing note/alternatives list is filled in from the newer source.
+    """
+    stmt = select(VocabularyItem).where(
+        and_(VocabularyItem.user_id == user_id, VocabularyItem.term_key == term_key)
+    )
+    res = await db.execute(stmt)
+    existing = res.scalar_one_or_none()
+    if existing is not None:
+        if not existing.alternatives and alternatives:
+            existing.alternatives = list(alternatives)
+        if not existing.note and note:
+            existing.note = note
+        await db.flush()
+        return existing, False
+
+    row = VocabularyItem(
+        user_id=user_id,
+        term=term,
+        term_key=term_key,
+        alternatives=list(alternatives or []),
+        note=note,
+        source=source if source in {"vocabulary", "grammar", "manual"} else "vocabulary",
+        session_id=session_id,
+        status="new",
+        review_count=0,
+        correct_count=0,
+        interval_days=0,
+        next_review_at=None,
+    )
+    db.add(row)
+    try:
+        # A savepoint keeps the rest of the sync batch alive if this insert loses a race.
+        async with db.begin_nested():
+            await db.flush()
+    except IntegrityError:
+        # Two reports finished at the same moment: the other writer won, use its row.
+        res = await db.execute(stmt)
+        found = res.scalar_one_or_none()
+        if found is None:
+            raise
+        return found, False
+    return row, True
+
+
+async def sync_wordbank_from_report(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    session_id: uuid.UUID,
+    items: List[Dict[str, Any]],
+) -> int:
+    """Store the cards extracted from one report. Returns how many were new."""
+    created = 0
+    for item in items:
+        _, was_created = await add_wordbank_item(
+            db,
+            user_id,
+            term=item["term"],
+            term_key=item["key"],
+            alternatives=item.get("alternatives") or [],
+            note=item.get("note") or None,
+            source=item.get("source") or "vocabulary",
+            session_id=session_id,
+        )
+        created += 1 if was_created else 0
+    return created
+
+
+def apply_review(row: VocabularyItem, state: Dict[str, Any]) -> VocabularyItem:
+    """Copy a schedule from ``wordbank.schedule_review`` onto the row."""
+    row.status = state["status"]
+    row.interval_days = state["interval_days"]
+    row.review_count = state["review_count"]
+    row.correct_count = state["correct_count"]
+    row.next_review_at = state["next_review_at"]
+    row.updated_at = datetime.datetime.now(datetime.timezone.utc)
+    return row
+
+
+async def delete_wordbank_item(db: AsyncSession, row: VocabularyItem) -> None:
+    await db.delete(row)
+    await db.flush()

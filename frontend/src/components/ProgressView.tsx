@@ -5,17 +5,51 @@ import {
   ArrowRight,
   BarChart3,
   CalendarDays,
+  Clock,
+  Flame,
   RefreshCw,
+  Target,
   Trophy,
   TrendingUp,
 } from 'lucide-react';
-import { fetchProgress, ProgressEntry, describeApiError } from '../lib/api';
+import {
+  fetchProgress,
+  fetchStats,
+  ProgressEntry,
+  StatsResponse,
+  describeApiError,
+} from '../lib/api';
 import { ScoreBar, ScoreRing, TrendChart, scoreTone } from './ReportCharts';
 
 interface ProgressViewProps {
   onBack: () => void;
   onOpenReport: (id: string) => void;
 }
+
+const HabitCard: React.FC<{
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  hint: string;
+  progress?: number | null;
+}> = ({ icon, label, value, hint, progress }) => (
+  <div className="rounded-2xl bg-surface/60 border border-slate-800/80 p-4">
+    <div className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-slate-500">
+      {icon}
+      <span>{label}</span>
+    </div>
+    <div className="text-2xl font-bold text-slate-100 tabular-nums mt-1">{value}</div>
+    {typeof progress === 'number' && (
+      <div className="mt-2 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+        <div
+          className="h-full rounded-full bg-cyan-400 transition-all duration-500"
+          style={{ width: `${Math.round(Math.min(1, Math.max(0, progress)) * 100)}%` }}
+        />
+      </div>
+    )}
+    <p className="text-[10px] text-slate-500 mt-1.5">{hint}</p>
+  </div>
+);
 
 const SKILLS: { key: keyof ProgressEntry['scores']; label: string }[] = [
   { key: 'fluency', label: 'Fluency' },
@@ -27,6 +61,7 @@ const SKILLS: { key: keyof ProgressEntry['scores']; label: string }[] = [
 
 export const ProgressView: React.FC<ProgressViewProps> = ({ onBack, onOpenReport }) => {
   const [entries, setEntries] = useState<ProgressEntry[]>([]);
+  const [stats, setStats] = useState<StatsResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -34,7 +69,9 @@ export const ProgressView: React.FC<ProgressViewProps> = ({ onBack, onOpenReport
     setLoading(true);
     setError(null);
     try {
-      setEntries(await fetchProgress(10));
+      const [progress, practice] = await Promise.all([fetchProgress(10), fetchStats()]);
+      setEntries(progress);
+      setStats(practice);
     } catch (err) {
       setError(describeApiError(err));
     } finally {
@@ -119,6 +156,53 @@ export const ProgressView: React.FC<ProgressViewProps> = ({ onBack, onOpenReport
               Try again
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Habit stats: streak, weekly goal, total time, words to review */}
+      {!loading && !error && stats && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+          <HabitCard
+            icon={<Flame className="w-4 h-4 text-amber-400" />}
+            label="Day streak"
+            value={String(stats.streak_days)}
+            hint={stats.streak_days > 0 ? 'Keep it alive today' : 'One session starts it'}
+          />
+          <HabitCard
+            icon={<Target className="w-4 h-4 text-cyan-400" />}
+            label="This week"
+            value={stats.weekly_goal ? `${stats.sessions_this_week}/${stats.weekly_goal}` : String(stats.sessions_this_week)}
+            hint={
+              stats.weekly_goal
+                ? stats.weekly_goal_met
+                  ? 'Weekly goal reached'
+                  : `${Math.max(0, stats.weekly_goal - stats.sessions_this_week)} more to reach your goal`
+                : 'Sessions this week'
+            }
+            progress={stats.weekly_goal_progress}
+          />
+          <HabitCard
+            icon={<Clock className="w-4 h-4 text-purple-400" />}
+            label="Minutes practised"
+            value={String(stats.minutes_total)}
+            hint={`${stats.minutes_this_week} this week`}
+          />
+          <HabitCard
+            icon={<BarChart3 className="w-4 h-4 text-emerald-400" />}
+            label="Words to review"
+            value={String(stats.wordbank.due)}
+            hint={`${stats.wordbank.mastered} mastered of ${stats.wordbank.total}`}
+          />
+        </div>
+      )}
+
+      {!loading && !error && stats?.weakest_skill && entries.length > 0 && (
+        <div className="mb-4 px-4 py-3 rounded-xl bg-surface/50 border border-slate-800/80 flex items-start gap-2 text-xs text-slate-300">
+          <Target className="w-4 h-4 text-amber-300 mt-0.5 flex-shrink-0" />
+          <span>
+            Your weakest area so far is <strong className="text-slate-100">{stats.weakest_skill.label}</strong>{' '}
+            ({stats.weakest_skill.score}/100). Make it today&apos;s focus before you start a call.
+          </span>
         </div>
       )}
 

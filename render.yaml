@@ -22,6 +22,11 @@ services:
       # Practice minutes per user per UTC day (0 disables the limit).
       - key: DAILY_MINUTES_LIMIT
         value: "30"
+      # Weekly session target shown on the progress screen (0 hides it).
+      - key: WEEKLY_SESSION_GOAL
+        value: "5"
+      - key: APP_VERSION
+        value: "2.0.0"
       - key: MAX_CONCURRENT_REPORT_JOBS
         value: "2"
       - key: PORT

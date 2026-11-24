@@ -204,3 +204,28 @@
 - **Decisions**: the report JSON key was renamed, not versioned, because `rubric_version` is already `v1` for old rows and the frontend reads both shapes. Audio is still not stored, so accent/pronunciation is coached live in conversation and remains unscored in the report.
 - **Follow-up (language rule)**: when the user switches to Hindi or Hinglish, the coach now stays in simple English, acknowledges the point in one English sentence, hands them the exact English sentence to repeat (or two-three words / a sentence starter if they are stuck), recasts mixed sentences fully in English and asks them to say it again - kindly, without lecturing or shame. Interview practice is only on explicit request.
 - **Needs human check**: start a call and confirm the coach asks for a topic, does not behave like an interviewer, and never asks about a job/role; switch to Hindi/Hinglish mid-call and confirm it guides you back to English with a sentence to repeat; check a report shows Clarity/Structure/Confidence; confirm an older session report still renders.
+
+## Feature: v2 — coach memory, Word Bank (spaced repetition), practice insights, production hardening
+- **Status**: Completed
+- **Why**: the app ended at "report after a call". Nothing carried over between sessions, feedback was read once and forgotten, and the only motivation was a daily minute cap. v2 turns it into a practice loop: the coach remembers you, your words come back until you know them, and progress is visible. It also adds the operational pieces a real deploy needs.
+- **Backend (new modules)**:
+  - `backend/coach_context.py` (new): `build_learner_context()` turns profile + last ready report (`next_session_focus`, grammar patterns, words to reuse) + due word-bank cards + today's focus into one sanitised, length-capped prompt block; `compose_system_instruction()` appends it to the coach instruction.
+  - `backend/wordbank.py` (new): term cleaning/de-duplication keys, defensive report extraction (vocabulary + grammar cards), `schedule_review()` (again +10 min, good 1→2→4… days, easy 3 days ×2.5, cap 180), `is_due()`, `summarize()`, `daily_goal_hint()`. Pure and unit tested.
+  - `backend/insights.py` (new): `practice_days()`, `current_streak()` (today or yesterday anchor), `week_start()` (Monday UTC), `compute_insights()` (totals, weekly goal, averages, strongest/weakest skill, improvement).
+- **Backend (existing files)**:
+  - `backend/models.py`, `backend/migrations/versions/b7e2d4c9a105_create_vocabulary_items_table.py` (new): `vocabulary_items` table (user-scoped, unique per user+term_key, review state, RLS enabled like the other tables).
+  - `backend/repositories.py`: `latest_ready_report`, `list_sessions_for_stats`, word-bank CRUD (`list_wordbank`, `get_wordbank_item`, `add_wordbank_item` with duplicate-safe insert, `sync_wordbank_from_report`, `apply_review`, `delete_wordbank_item`).
+  - `backend/reports.py`: optional `best_moment` field in the schema/prompt/assembled report (backwards compatible), and a best-effort `_sync_wordbank()` after a ready report (a word-bank failure never fails the report; rebuilding a report does not duplicate cards).
+  - `backend/gemini_live.py`: `GeminiLiveBridge(learner_context=...)` folds the block into the live system instruction.
+  - `backend/app.py`: `GET/POST /api/wordbank`, `POST /api/wordbank/{id}/review`, `DELETE /api/wordbank/{id}`, `GET /api/stats`; WS auth message accepts an optional `focus` (capped at 160 chars) used for the coach context; `/api/version`, `/api/ready` (SELECT 1); security-headers + request-id middleware; generic 500 handler. `/api/health` unchanged.
+- **Frontend**:
+  - `frontend/src/components/WordBankView.tsx` (new): counts, one-card practice (Show answer → Again / Good / Easy), add-your-own form, full list with delete.
+  - `frontend/src/lib/api.ts`: word-bank + stats types/functions, `best_moment` on `ReportAnalysis`.
+  - `frontend/src/App.tsx`: Word Bank tab with due-count badge, `#/words` route, "Today's focus" input, focus passed to `connect()`.
+  - `frontend/src/audio/useLiveSession.ts`: `connect(focus?)` sends the focus in the auth message only.
+  - `frontend/src/components/ProgressView.tsx`: habit cards (streak, weekly goal + progress bar, total minutes, words due) and a "weakest area" hint.
+  - `frontend/src/components/ReportView.tsx`: "Your best moment" quote and a "Practise these words" action.
+- **Tests added**: `test_wordbank.py` (13), `test_insights.py` (8), `test_coach_context.py` (6), `test_wordbank_api.py` (5, including report→deck sync and no duplicates on rebuild), `test_stats_api.py` (7: stats, per-user isolation, readiness, version, headers).
+- **Verification Results**: `backend/.venv/bin/python -m pytest -q` → 250 passed; `npm test` → 17 passed; `npm run build` → success (498 kB / 134 kB gzip).
+- **Decisions**: the word bank stores no audio and no transcript snippets beyond the corrected sentence; streaks count sessions of at least 30 s so an accidental 5-second tap does not fake a habit; `WEEKLY_SESSION_GOAL` is a target only (never an access limit); the focus text is per-call and not persisted, so no new column was needed.
+- **Needs human check**: start a call with a focus typed and confirm the coach opens on that topic and remembers the previous report's advice; finish a 30+ word session and confirm cards appear in `#/words`, then review one and see the next date change; check a report shows "Your best moment"; confirm the header badge counts down after reviews; run `alembic upgrade head` on a real Supabase database (SQLite tests do not exercise the migration).

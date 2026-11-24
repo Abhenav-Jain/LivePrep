@@ -11,10 +11,12 @@ from enum import Enum
 from pathlib import Path
 from typing import AsyncGenerator, Optional
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, status
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from gemini_live import GeminiLiveBridge
 from transcript import TurnAssembler
@@ -34,8 +36,26 @@ from repositories import (
     list_progress_reports,
     list_pending_reports,
     seconds_used_since,
+    latest_ready_report,
+    list_sessions_for_stats,
+    list_wordbank,
+    get_wordbank_item,
+    add_wordbank_item,
+    apply_review,
+    delete_wordbank_item,
 )
 from reports import RUBRIC_VERSION, run_report_pipeline
+from coach_context import build_learner_context
+from insights import compute_insights
+from wordbank import (
+    clean_alternatives,
+    daily_goal_hint,
+    is_due,
+    normalize_term,
+    schedule_review,
+    summarize as summarize_wordbank,
+    term_key,
+)
 from tickets import TicketStore, TicketLimitError
 from ratelimit import RateLimitError, SlidingWindowLimiter
 
@@ -113,6 +133,12 @@ REPORT_RETRY_LIMITER = SlidingWindowLimiter(
 # money, so one account must not be able to drain the Gemini quota in a single day.
 DAILY_MINUTES_LIMIT = int(os.getenv("DAILY_MINUTES_LIMIT", "30"))
 
+# Sessions a learner aims to finish each week (0 hides the goal). Only affects the progress
+# screen: it is a motivation target, never an access limit.
+WEEKLY_SESSION_GOAL = int(os.getenv("WEEKLY_SESSION_GOAL", "5"))
+
+APP_VERSION = os.getenv("APP_VERSION", "2.0.0")
+
 # Concurrency limit for sessions (default 3)
 MAX_CONCURRENT_SESSIONS = int(os.getenv("MAX_CONCURRENT_SESSIONS", "3"))
 SESSION_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_SESSIONS)
@@ -135,10 +161,65 @@ DEFAULT_SCENARIO = "free_talk"
 AUTH_TIMEOUT_SECONDS = float(os.getenv("AUTH_TIMEOUT_SECONDS", "10"))
 
 
+# --------------------------------------------------------------------------- #
+# Operational endpoints
+# --------------------------------------------------------------------------- #
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """Request id + response hardening for every answer (API and static frontend).
+
+    The id makes one failing request traceable in the logs without logging any content.
+    ``SAMEORIGIN`` (not DENY) keeps the app usable inside the preview iframe.
+    """
+    request_id = uuid.uuid4().hex[:12]
+    response = await call_next(request)
+    response.headers.setdefault("X-Request-Id", request_id)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(self), microphone=(self)")
+    return response
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Never leak a stack trace or an internal message to the client."""
+    logger.error(
+        "Unhandled error on %s %s: %s",
+        request.method, request.url.path, type(exc).__name__, exc_info=True,
+    )
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+
 @app.get("/api/health")
 async def health_check():
-    """Health check endpoint."""
+    """Liveness probe: the process is up (no dependencies touched)."""
     return {"status": "ok"}
+
+
+@app.get("/api/version")
+async def version_info():
+    return {"name": "LivePrep", "version": APP_VERSION, "rubric": RUBRIC_VERSION}
+
+
+@app.get("/api/ready")
+async def readiness_check():
+    """Readiness probe: liveness plus a real database round-trip."""
+    if AsyncSessionLocal is None:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "degraded", "database": "unconfigured", "version": APP_VERSION},
+        )
+    try:
+        async with AsyncSessionLocal() as db:
+            await db.execute(text("SELECT 1"))
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Readiness check failed: %s", type(exc).__name__)
+        return JSONResponse(
+            status_code=503,
+            content={"status": "degraded", "database": "error", "version": APP_VERSION},
+        )
+    return {"status": "ok", "database": "ok", "version": APP_VERSION}
 
 
 # --------------------------------------------------------------------------- #
@@ -469,6 +550,171 @@ async def get_progress(
     return {"reports": rows}
 
 
+# --------------------------------------------------------------------------- #
+# Word bank (v2) — saved words and corrections, practised with spaced repetition
+# --------------------------------------------------------------------------- #
+def _wordbank_view(row) -> dict:
+    alternatives = row.alternatives if isinstance(row.alternatives, list) else []
+    return {
+        "id": row.id,
+        "term": row.term,
+        "alternatives": [str(a) for a in alternatives],
+        "note": row.note,
+        "source": row.source,
+        "status": row.status,
+        "review_count": row.review_count,
+        "correct_count": row.correct_count,
+        "interval_days": row.interval_days,
+        "next_review_at": row.next_review_at.isoformat() if row.next_review_at else None,
+        "due": is_due(row.next_review_at),
+        "session_id": str(row.session_id) if row.session_id else None,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+    }
+
+
+def _sorted_for_practice(rows) -> list:
+    """Due cards first, oldest scheduled first, so practice always starts with the backlog."""
+    epoch = datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
+    return sorted(
+        rows,
+        key=lambda r: (
+            0 if is_due(r.next_review_at) else 1,
+            r.next_review_at or epoch,
+            -r.id,
+        ),
+    )
+
+
+MAX_WORDBANK_ROWS = 500
+
+
+class WordBankCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    term: str = Field(min_length=1, max_length=120)
+    alternatives: list[str] = Field(default_factory=list, max_length=5)
+    note: Optional[str] = Field(default=None, max_length=300)
+
+    @field_validator("alternatives", mode="before")
+    @classmethod
+    def _clean_alternatives(cls, value):
+        return clean_alternatives(value)
+
+
+class WordBankReview(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    result: str = Field(pattern=r"^(again|good|easy)$")
+
+
+@app.get("/api/wordbank")
+async def list_my_wordbank(
+    due_only: bool = False,
+    user: AuthenticatedUser = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """The caller's word bank, due cards first, with the counts the UI badge needs."""
+    rows = await list_wordbank(db, user_id=user.user_id, limit=MAX_WORDBANK_ROWS)
+    counts = summarize_wordbank(rows)
+    ordered = _sorted_for_practice(rows)
+    if due_only:
+        ordered = [row for row in ordered if is_due(row.next_review_at)]
+    return {
+        "items": [_wordbank_view(row) for row in ordered],
+        "summary": counts,
+        "hint": daily_goal_hint(counts["due"]),
+    }
+
+
+@app.post("/api/wordbank")
+async def create_wordbank_card(
+    body: WordBankCreate,
+    user: AuthenticatedUser = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Add a card by hand. Adding the same word twice returns the existing card."""
+    term = normalize_term(body.term)
+    if term is None:
+        raise HTTPException(status_code=422, detail="Enter a word or short phrase.")
+    try:
+        note = _clean_single_line(body.note)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="The note contains invalid characters.")
+
+    row, created = await add_wordbank_item(
+        db,
+        user.user_id,
+        term=term,
+        term_key=term_key(term),
+        alternatives=body.alternatives,
+        note=note,
+        source="manual",
+    )
+    await db.commit()
+    return {"item": _wordbank_view(row), "created": created}
+
+
+@app.post("/api/wordbank/{item_id}/review")
+async def review_wordbank_card(
+    item_id: int,
+    body: WordBankReview,
+    user: AuthenticatedUser = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Record one review (again / good / easy) and return the next schedule."""
+    row = await get_wordbank_item(db, user.user_id, item_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Card not found")
+
+    state = schedule_review(
+        result=body.result,
+        interval_days=row.interval_days,
+        review_count=row.review_count,
+        correct_count=row.correct_count,
+    )
+    apply_review(row, state)
+    await db.commit()
+
+    rows = await list_wordbank(db, user_id=user.user_id, limit=MAX_WORDBANK_ROWS)
+    return {"item": _wordbank_view(row), "summary": summarize_wordbank(rows)}
+
+
+@app.delete("/api/wordbank/{item_id}")
+async def delete_wordbank_card(
+    item_id: int,
+    user: AuthenticatedUser = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove a card. A foreign id answers 404 exactly like a missing one."""
+    row = await get_wordbank_item(db, user.user_id, item_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Card not found")
+    await delete_wordbank_item(db, row)
+    await db.commit()
+    return {"deleted": True}
+
+
+# --------------------------------------------------------------------------- #
+# Practice insights — streak, weekly goal, totals, skill trends
+# --------------------------------------------------------------------------- #
+@app.get("/api/stats")
+async def get_stats(
+    user: AuthenticatedUser = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Everything derived from existing rows: no extra state, nothing to drift."""
+    since = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=365)
+    sessions = await list_sessions_for_stats(db, user_id=user.user_id, since=since)
+    progress = await list_progress_reports(db, user_id=user.user_id, limit=20)
+    rows = await list_wordbank(db, user_id=user.user_id, limit=MAX_WORDBANK_ROWS)
+    return compute_insights(
+        sessions=sessions,
+        progress=progress,
+        wordbank=summarize_wordbank(rows),
+        weekly_goal=WEEKLY_SESSION_GOAL,
+    )
+
+
 @app.post("/api/ws-ticket")
 async def create_ws_ticket(user: AuthenticatedUser = Depends(current_user)):
     """Issues a single-use ticket (valid ~60 s) that the browser sends as its first WebSocket message."""
@@ -616,6 +862,11 @@ async def websocket_live_endpoint(websocket: WebSocket):
     requested = first.get("scenario")
     scenario = requested if isinstance(requested, str) and requested in ALLOWED_SCENARIOS else DEFAULT_SCENARIO
 
+    # Optional, learner-written focus for this call ("past tense", "tell a work story").
+    # Treated as data: it is length-capped here and sanitised again when the prompt is built.
+    focus_raw = first.get("focus")
+    focus = focus_raw.strip()[:160] if isinstance(focus_raw, str) else ""
+
     # 4. One live session per user, server capacity, and storage must be available.
     #    (No await between the check and ACTIVE_USERS.add, so two quick tabs cannot both pass.)
     if user_id in ACTIVE_USERS:
@@ -687,12 +938,34 @@ async def websocket_live_endpoint(websocket: WebSocket):
 
             turn_assembler = TurnAssembler(on_turn=_save_turn)
 
+            # Coach memory: who the learner is, what the last report asked them to practise,
+            # and which word-bank cards are due. Built once per call, best effort: a database
+            # hiccup must never block a live session, so a failure just means no extra context.
+            learner_context = ""
+            try:
+                async with AsyncSessionLocal() as db:
+                    profile_row = await get_profile(db, user_id)
+                    last_report = await latest_ready_report(db, user_id)
+                    word_rows = await list_wordbank(db, user_id=user_id, limit=200)
+                due_words = [row for row in word_rows if is_due(row.next_review_at)][:8]
+                learner_context = build_learner_context(
+                    profile=profile_row,
+                    last_report=last_report,
+                    due_words=due_words,
+                    focus=focus,
+                )
+            except Exception as exc:  # noqa: BLE001 — personalisation is optional
+                logger.warning(
+                    "Could not build learner context for %s: %s", user_id, type(exc).__name__
+                )
+
             bridge = GeminiLiveBridge(
                 api_key=SERVER_API_KEY,
                 model=DEFAULT_MODEL,
                 session_id=str(session_id),
                 user_id=str(user_id),
                 assembler=turn_assembler,
+                learner_context=learner_context,
             )
 
             # Notify the client which session_id was created (for linking to the report later)

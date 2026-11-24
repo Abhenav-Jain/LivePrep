@@ -29,6 +29,7 @@ interface ReportViewProps {
   sessionId: string;
   onBack: () => void;
   onOpenTranscript: (id: string) => void;
+  onOpenWordBank: () => void;
 }
 
 const POLL_INTERVAL_MS = 2500;
@@ -42,7 +43,12 @@ const scoreLabels: { key: keyof NonNullable<ReportAnalysis['scores']>; label: st
   { key: 'pace', label: 'Pace', hint: 'Comfortable speaking speed' },
 ];
 
-export const ReportView: React.FC<ReportViewProps> = ({ sessionId, onBack, onOpenTranscript }) => {
+export const ReportView: React.FC<ReportViewProps> = ({
+  sessionId,
+  onBack,
+  onOpenTranscript,
+  onOpenWordBank,
+}) => {
   const [data, setData] = useState<ReportResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -296,6 +302,21 @@ export const ReportView: React.FC<ReportViewProps> = ({ sessionId, onBack, onOpe
             </div>
           </div>
 
+          {/* Best moment: one real sentence from the call, quoted back */}
+          {report.best_moment && (
+            <div className="rounded-2xl bg-emerald-950/20 border border-emerald-900/40 p-4">
+              <h3 className="text-xs font-mono uppercase tracking-wider text-emerald-300/80 mb-2 flex items-center gap-1.5">
+                <MessageSquareQuote className="w-3.5 h-3.5 text-emerald-400" /> Your best moment
+              </h3>
+              <p className="text-sm text-emerald-100/90 italic leading-relaxed">
+                &ldquo;{report.best_moment}&rdquo;
+              </p>
+              <p className="text-[10px] text-emerald-200/50 mt-2">
+                This is your own sentence from the call. Reuse it as a model next time.
+              </p>
+            </div>
+          )}
+
           {/* Score cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {scoreLabels.map(({ key, label, hint }) => (
@@ -455,14 +476,27 @@ export const ReportView: React.FC<ReportViewProps> = ({ sessionId, onBack, onOpe
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-slate-900/40 border border-slate-800/70 p-4">
             <p className="text-xs text-slate-400">
               Practice these five steps before your next session to move your score.
+              {report.words_to_upgrade.length + report.grammar_mistakes.length > 0 &&
+                ' Your words and fixes were added to the Word Bank automatically.'}
             </p>
-            <button
-              onClick={() => onOpenTranscript(sessionId)}
-              className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700/60"
-            >
-              <Mic className="w-3.5 h-3.5" />
-              <span>Review what you said</span>
-            </button>
+            <div className="flex items-center gap-2">
+              {report.words_to_upgrade.length + report.grammar_mistakes.length > 0 && (
+                <button
+                  onClick={onOpenWordBank}
+                  className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-primary/15 hover:bg-primary/25 text-xs font-medium text-primary-glow border border-primary/30"
+                >
+                  <Repeat2 className="w-3.5 h-3.5" />
+                  <span>Practise these words</span>
+                </button>
+              )}
+              <button
+                onClick={() => onOpenTranscript(sessionId)}
+                className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700/60"
+              >
+                <Mic className="w-3.5 h-3.5" />
+                <span>Review what you said</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

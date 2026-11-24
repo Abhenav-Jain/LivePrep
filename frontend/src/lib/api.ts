@@ -213,6 +213,8 @@ export interface ReportAnalysis {
   interview_feedback?: LegacyInterviewFeedback | null;
   action_plan: ActionStep[];
   next_session_focus: string;
+  /** The best sentence the learner actually said (absent on older reports). */
+  best_moment?: string | null;
   metrics?: ReportMetrics;
   notes?: { pronunciation?: string; filler?: string };
 }
@@ -260,4 +262,114 @@ export async function fetchProgress(limit = 10): Promise<ProgressEntry[]> {
   if (!res.ok) throw new ApiError(res.status, `Failed to load progress (${res.status})`);
   const body = await res.json();
   return body.reports || [];
+}
+
+// --------------------------------------------------------------------------- //
+// Word bank (v2): saved words and corrections with spaced repetition
+// --------------------------------------------------------------------------- //
+export interface WordBankItem {
+  id: number;
+  term: string;
+  alternatives: string[];
+  note: string | null;
+  source: 'vocabulary' | 'grammar' | 'manual' | string;
+  status: 'new' | 'learning' | 'mastered' | string;
+  review_count: number;
+  correct_count: number;
+  interval_days: number;
+  next_review_at: string | null;
+  due: boolean;
+  session_id: string | null;
+  created_at: string | null;
+}
+
+export interface WordBankSummary {
+  total: number;
+  due: number;
+  new: number;
+  learning: number;
+  mastered: number;
+}
+
+export interface WordBankResponse {
+  items: WordBankItem[];
+  summary: WordBankSummary;
+  hint: string;
+}
+
+export async function fetchWordBank(dueOnly = false): Promise<WordBankResponse> {
+  const res = await authFetch(`/api/wordbank${dueOnly ? '?due_only=true' : ''}`);
+  if (!res.ok) throw new ApiError(res.status, `Failed to load the word bank (${res.status})`);
+  return res.json();
+}
+
+export async function createWordBankCard(input: {
+  term: string;
+  alternatives?: string[];
+  note?: string | null;
+}): Promise<{ item: WordBankItem; created: boolean }> {
+  const res = await authFetch('/api/wordbank', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new ApiError(res.status, `Could not save the word (${res.status})`);
+  return res.json();
+}
+
+export async function reviewWordBankCard(
+  itemId: number,
+  result: 'again' | 'good' | 'easy',
+): Promise<{ item: WordBankItem; summary: WordBankSummary }> {
+  const res = await authFetch(`/api/wordbank/${itemId}/review`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ result }),
+  });
+  if (!res.ok) throw new ApiError(res.status, `Could not save the review (${res.status})`);
+  return res.json();
+}
+
+export async function deleteWordBankCard(itemId: number): Promise<void> {
+  const res = await authFetch(`/api/wordbank/${itemId}`, { method: 'DELETE' });
+  if (!res.ok) throw new ApiError(res.status, `Could not delete the word (${res.status})`);
+}
+
+// --------------------------------------------------------------------------- //
+// Practice insights (streak, weekly goal, totals)
+// --------------------------------------------------------------------------- //
+export interface SkillScore {
+  skill: string;
+  label: string;
+  score: number;
+}
+
+export interface StatsResponse {
+  today: string;
+  week_start: string;
+  streak_days: number;
+  active_days: number;
+  sessions_total: number;
+  sessions_today: number;
+  sessions_this_week: number;
+  minutes_total: number;
+  minutes_this_week: number;
+  weekly_goal: number | null;
+  weekly_goal_met: boolean;
+  weekly_goal_progress: number | null;
+  avg_overall: number | null;
+  best_overall: number | null;
+  latest_overall: number | null;
+  improvement: number | null;
+  scored_sessions: number;
+  average_by_skill: Record<string, number | null>;
+  strongest_skill: SkillScore | null;
+  weakest_skill: SkillScore | null;
+  wordbank: { total: number; due: number; mastered: number };
+}
+
+export async function fetchStats(): Promise<StatsResponse> {
+  const res = await authFetch('/api/stats');
+  if (!res.ok) throw new ApiError(res.status, `Failed to load your stats (${res.status})`);
+  return res.json();
 }

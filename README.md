@@ -18,6 +18,10 @@
 - 🔐 **Per-user login**: Sign in with an email code (Supabase Auth). Every live call is tied to your account and stored as a session in Postgres. One live call per user at a time.
 - 🔒 **No model tools**: The AI has no shell, file, web or database access. Scoring and feedback reports are produced on the server after the call (coming in the next steps).
 - 🔄 **Context Window Compression & Resumption**: Native `SlidingWindow` compression prevents 10-minute session expiration.
+- 🧠 **Coach memory**: every call starts with a short, bounded context built from your profile, your last report (`next_session_focus`, recurring grammar patterns, words worth reusing) and the word-bank cards due today. You can also type today's focus ("past tense", "telling stories") before starting a call.
+- 📚 **Word Bank with spaced repetition**: words and grammar fixes from each report are saved as cards automatically (or added by hand) and reviewed with a light 1 → 2 → 4 → 8 day schedule. `#/words` is a one-card-at-a-time practice screen.
+- 🔥 **Practice insights**: day streak, weekly session goal, total minutes, best/latest score, strongest and weakest skill, derived from rows that already exist (`GET /api/stats`).
+- 🩺 **Operational endpoints**: `/api/health` (liveness), `/api/ready` (database round-trip), `/api/version`; every response carries an `X-Request-Id` and standard security headers.
 - 🎨 **Futuristic Cockpit UI**:
   - Interactive audio-reactive **Voice Orb** that pulses and shifts color dynamically (Idle, Listening, Thinking, Speaking).
   - Picture-in-Picture Vision Stream preview with Instant Snapshot trigger.
@@ -210,6 +214,53 @@ UI: `#/sessions/<id>/report` shows the overall score, five skill scores, objecti
 - `REPORT_RETRY_LIMIT` / `REPORT_RETRY_WINDOW_SECONDS` (default 10 per hour): rebuild budget per user; over it the endpoint answers `429` with `Retry-After`.
 - `MAX_CONCURRENT_REPORT_JOBS` (default 2): report jobs running at once.
 - `REPORT_RECOVERY_LIMIT` (default 20): on startup the server rebuilds reports a previous process left `pending` (a deploy or crash used to leave the page polling forever).
+
+---
+
+## 🧠 Coach memory, Word Bank and practice insights (v2)
+
+### Coach memory (no new state, no extra cost)
+Before a call starts, `backend/coach_context.py` builds one short block (max ~1,400 chars) and appends it to the live system instruction:
+
+- profile: display name, goal, level, native language, correction preference;
+- the last ready report's `next_session_focus`, up to three grammar patterns and up to six words worth reusing;
+- up to eight word-bank cards that are due today;
+- today's focus, if the learner typed one (the optional field above the call controls).
+
+Rules that keep this safe: every value is learner-written data, so it is sanitised (control characters removed, `<`/`>` replaced), length-capped and labelled as data in the prompt; there are no ids, emails or transcripts in it. If the database is unavailable the block is simply empty and the call still starts.
+
+### Word Bank (spaced repetition)
+A finished report fills the deck automatically: `words_to_upgrade` become vocabulary cards and `grammar_mistakes` become correction cards (with the fixed sentence as the model answer). Duplicates are de-duplicated per user by a lower-cased key. Reviewing a card moves it through a simple schedule:
+
+| Answer | Next review | Status |
+|---|---|---|
+| Again | +10 minutes | learning |
+| Good | doubles, starting at 1 day (cap 180) | learning, `mastered` from 14 days |
+| Easy | starts at 3 days, grows 2.5× (cap 180) | mastered |
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/wordbank` | All cards, due first, plus `summary {total, due, new, learning, mastered}` and a one-line hint |
+| POST | `/api/wordbank` | Add a card by hand (`term`, `alternatives[]`, `note`); adding a duplicate returns the existing card with `created: false` |
+| POST | `/api/wordbank/{id}/review` | Record `{result: "again" \| "good" \| "easy"}` and return the next schedule |
+| DELETE | `/api/wordbank/{id}` | Remove a card (a foreign id answers the same `404` as a missing one) |
+
+UI: `#/words` (Word Bank in the header, with a badge for due cards).
+
+### Practice insights
+`GET /api/stats` derives everything without writing new state: `streak_days` (consecutive UTC days with a session of at least 30 s, counting from today or yesterday so a streak is not lost before the day ends), `sessions_this_week` from Monday UTC against `WEEKLY_SESSION_GOAL` (default 5, `0` hides the goal), `minutes_total`, `minutes_this_week`, `avg_overall`, `best_overall`, `latest_overall`, `improvement`, `average_by_skill`, `strongest_skill`, `weakest_skill` and the word-bank counts. `#/progress` shows them as habit cards above the trend chart.
+
+### Migration and configuration
+- `alembic upgrade head` creates `vocabulary_items` (one row per user + word, with the review state).
+- `WEEKLY_SESSION_GOAL` (default 5) is the only new environment variable; it only affects the progress screen, never access.
+- `APP_VERSION` (default `2.0.0`) is reported by `/api/version` and `/api/ready`.
+
+### Operational checks
+- `GET /api/health` stays a pure liveness probe (`{"status": "ok"}`).
+- `GET /api/ready` runs `SELECT 1` and answers `503` with `{"database": "unconfigured" | "error"}` when the store is unavailable, so a platform health check can tell "process up" from "can serve requests".
+- Every response gets `X-Request-Id` (12 hex chars, also in the server log for unhandled errors), `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy` and a `Permissions-Policy` limited to camera/microphone for this origin. Unhandled errors return a generic `500` and the traceback stays in the log.
+
+---
 
 ### Supabase setup for email sign-in
 1. *Authentication > Sign In / Providers*: **Email** enabled (it is by default).
