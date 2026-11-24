@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, KeyRound, Loader2, Mail, Radio } from 'lucide-react';
+import { ArrowLeft, KeyRound, Loader2, Mail, Mic, Radio, Sparkles, TrendingUp } from 'lucide-react';
 import { useAuth } from '../auth/AuthProvider';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -25,6 +25,28 @@ export function friendlyAuthError(err: unknown): string {
   }
   return 'Something went wrong. Please try again.';
 }
+
+const HIGHLIGHTS = [
+  { icon: <Mic className="h-3.5 w-3.5" />, title: 'Real conversation', copy: 'Talk out loud; the coach listens and answers like a person.' },
+  { icon: <Sparkles className="h-3.5 w-3.5" />, title: 'An honest report', copy: 'Fluency, grammar, vocabulary and pace after every call.' },
+  { icon: <TrendingUp className="h-3.5 w-3.5" />, title: 'A memory', copy: 'Your mistakes return as a word bank, reviewed at the right time.' },
+];
+
+const BrandMark: React.FC<{ size?: 'sm' | 'lg' }> = ({ size = 'sm' }) => (
+  <div className="flex items-center gap-2.5">
+    <div
+      className={`grid place-items-center rounded-2xl bg-gradient-to-br from-primary to-accent-cyan text-white shadow-glow ${
+        size === 'lg' ? 'h-11 w-11' : 'h-9 w-9'
+      }`}
+    >
+      <Radio className={size === 'lg' ? 'h-5 w-5' : 'h-4 w-4'} />
+    </div>
+    <div className="leading-none">
+      <p className={`font-display tracking-tight text-white ${size === 'lg' ? 'text-2xl' : 'text-xl'}`}>LivePrep</p>
+      <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.16em] text-slate-500">AI communication coach</p>
+    </div>
+  </div>
+);
 
 export const LoginScreen: React.FC = () => {
   const { sendCode, verifyCode } = useAuth();
@@ -83,124 +105,162 @@ export const LoginScreen: React.FC = () => {
     }
   };
 
-  const inputClass =
-    'w-full px-3.5 py-3 rounded-xl bg-slate-900 border border-slate-700 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-primary';
-  const primaryButton =
-    'w-full flex items-center justify-center space-x-2 px-4 py-3 rounded-xl text-sm font-semibold text-white bg-primary hover:bg-blue-600 transition-colors shadow-lg shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed';
-
   return (
-    <div className="min-h-screen w-screen flex items-center justify-center p-4 bg-background text-slate-100">
-      <div className="w-full max-w-sm space-y-6">
-        <div className="flex flex-col items-center text-center space-y-3">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/20">
-            <Radio className="w-6 h-6" />
+    <div className="min-h-[100dvh] w-full overflow-y-auto">
+      <div className="mx-auto grid min-h-[100dvh] w-full max-w-6xl items-center gap-10 px-5 py-10 lg:grid-cols-[1.05fr_0.95fr] lg:px-8">
+        {/* Brand story */}
+        <div className="hidden animate-fade-up flex-col gap-7 lg:flex">
+          <BrandMark size="lg" />
+
+          <div>
+            <p className="eyebrow mb-3">Practice out loud, improve for real</p>
+            <h1 className="font-display text-5xl leading-[1.05] text-white xl:text-6xl">
+              Speak English
+              <br />
+              <span className="italic text-primary-glow">with confidence.</span>
+            </h1>
+            <p className="mt-4 max-w-md text-sm leading-relaxed text-slate-400">
+              A patient AI coach for anyone — technical or not. Have a real conversation on any topic, then
+              get a clear report and a plan for the next one.
+            </p>
           </div>
-          <h1 className="text-2xl font-extrabold tracking-wide bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-cyan-400 to-purple-400">
-            LivePrep
-          </h1>
-          <p className="text-sm text-slate-400">Improve your English and confidence through real conversation with your AI coach.</p>
+
+          <ul className="space-y-3">
+            {HIGHLIGHTS.map((item) => (
+              <li key={item.title} className="flex items-start gap-3">
+                <span className="mt-0.5 grid h-8 w-8 flex-none place-items-center rounded-xl border border-white/10 bg-white/[0.04] text-primary-glow">
+                  {item.icon}
+                </span>
+                <span>
+                  <span className="block text-[13px] font-semibold text-slate-200">{item.title}</span>
+                  <span className="block text-xs leading-relaxed text-slate-500">{item.copy}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
 
-        <div className="rounded-2xl bg-surface border border-slate-700/80 shadow-2xl p-6 space-y-5">
-          {step === 'email' ? (
-            <>
-              <div className="space-y-1">
-                <h2 className="text-base font-bold text-white">Sign in or create an account</h2>
-                <p className="text-xs text-slate-400">We will email you a one-time code. No password needed.</p>
-              </div>
-              <div className="space-y-1.5">
-                <label htmlFor="email" className="flex items-center space-x-1.5 text-xs font-semibold text-slate-300">
-                  <Mail className="w-3.5 h-3.5 text-primary-glow" />
-                  <span>Email</span>
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  inputMode="email"
-                  autoComplete="email"
-                  autoFocus
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !busy) void requestCode();
-                  }}
-                  className={inputClass}
-                />
-              </div>
-              <button onClick={() => void requestCode()} disabled={busy || !email.trim()} className={primaryButton}>
-                {busy && <Loader2 className="w-4 h-4 animate-spin" />}
-                <span>{busy ? 'Sending...' : 'Send me a code'}</span>
-              </button>
-            </>
-          ) : (
-            <>
-              <div className="space-y-1">
-                <h2 className="text-base font-bold text-white">Check your email</h2>
-                <p className="text-xs text-slate-400">
-                  We sent a sign-in email to <span className="font-mono text-slate-200">{normalizedEmail}</span>.{' '}
-                  <span className="text-slate-200">Click the link in it</span> to sign in (check spam if you cannot find it).
-                  If your email shows a code instead of a link, type the code below.
-                </p>
-              </div>
-              <div className="space-y-1.5">
-                <label htmlFor="code" className="flex items-center space-x-1.5 text-xs font-semibold text-slate-300">
-                  <KeyRound className="w-3.5 h-3.5 text-primary-glow" />
-                  <span>Code (only if your email has one)</span>
-                </label>
-                <input
-                  id="code"
-                  ref={codeInputRef}
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  maxLength={10}
-                  placeholder="123456"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !busy) void submitCode();
-                  }}
-                  className={`${inputClass} font-mono tracking-[0.3em] text-center text-lg`}
-                />
-              </div>
-              <button onClick={() => void submitCode()} disabled={busy || code.length < 6} className={primaryButton}>
-                {busy && <Loader2 className="w-4 h-4 animate-spin" />}
-                <span>{busy ? 'Checking...' : 'Sign in with code'}</span>
-              </button>
-              <div className="flex items-center justify-between text-xs">
-                <button
-                  onClick={() => {
-                    setStep('email');
-                    setError(null);
-                    setCode('');
-                  }}
-                  className="flex items-center space-x-1 text-slate-400 hover:text-white"
-                >
-                  <ArrowLeft className="w-3.5 h-3.5" />
-                  <span>Change email</span>
-                </button>
+        {/* Sign-in card */}
+        <div className="mx-auto w-full max-w-sm animate-fade-up lg:mx-0">
+          <div className="mb-6 flex justify-center lg:hidden">
+            <BrandMark />
+          </div>
+
+          <div className="panel-strong p-6">
+            {step === 'email' ? (
+              <div className="space-y-5">
+                <div className="space-y-1">
+                  <h2 className="font-display text-2xl text-white">Sign in</h2>
+                  <p className="text-xs leading-relaxed text-slate-400">
+                    We email you a one-time link. No password to remember.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label htmlFor="email" className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    <Mail className="h-3.5 w-3.5 text-primary-glow" />
+                    <span>Email</span>
+                  </label>
+                  <input
+                    id="email"
+                    type="email"
+                    inputMode="email"
+                    autoComplete="email"
+                    autoFocus
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !busy) void requestCode();
+                    }}
+                    className="field"
+                  />
+                </div>
+
                 <button
                   onClick={() => void requestCode()}
-                  disabled={busy || cooldown > 0}
-                  className="text-primary-glow hover:text-white disabled:text-slate-600 disabled:cursor-not-allowed"
+                  disabled={busy || !email.trim()}
+                  className="btn-primary w-full py-3 text-sm"
                 >
-                  {cooldown > 0 ? `Resend email in ${cooldown}s` : 'Resend email'}
+                  {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+                  <span>{busy ? 'Sending…' : 'Email me a sign-in link'}</span>
                 </button>
               </div>
-            </>
-          )}
+            ) : (
+              <div className="space-y-5">
+                <div className="space-y-1">
+                  <h2 className="font-display text-2xl text-white">Check your email</h2>
+                  <p className="text-xs leading-relaxed text-slate-400">
+                    Sent to <span className="font-mono text-slate-200">{normalizedEmail}</span>. Click the link in
+                    that email to sign in (check spam too). If your email shows a code instead, type it below.
+                  </p>
+                </div>
 
-          {error && (
-            <div role="alert" className="rounded-xl bg-rose-500/10 border border-rose-500/30 px-3 py-2 text-xs text-rose-300">
-              {error}
-            </div>
-          )}
+                <div className="space-y-1.5">
+                  <label htmlFor="code" className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    <KeyRound className="h-3.5 w-3.5 text-primary-glow" />
+                    <span>Code (only if your email has one)</span>
+                  </label>
+                  <input
+                    id="code"
+                    ref={codeInputRef}
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={10}
+                    placeholder="123456"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !busy) void submitCode();
+                    }}
+                    className="field text-center font-mono text-lg tracking-[0.35em]"
+                  />
+                </div>
+
+                <button
+                  onClick={() => void submitCode()}
+                  disabled={busy || code.length < 6}
+                  className="btn-primary w-full py-3 text-sm"
+                >
+                  {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+                  <span>{busy ? 'Checking…' : 'Sign in with code'}</span>
+                </button>
+
+                <div className="flex items-center justify-between text-[11px]">
+                  <button
+                    onClick={() => {
+                      setStep('email');
+                      setError(null);
+                      setCode('');
+                    }}
+                    className="flex items-center gap-1 text-slate-400 transition-colors hover:text-white"
+                  >
+                    <ArrowLeft className="h-3.5 w-3.5" />
+                    <span>Change email</span>
+                  </button>
+                  <button
+                    onClick={() => void requestCode()}
+                    disabled={busy || cooldown > 0}
+                    className="text-primary-glow transition-colors hover:text-white disabled:cursor-not-allowed disabled:text-slate-600"
+                  >
+                    {cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend email'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {error && (
+              <div role="alert" className="mt-4 rounded-xl border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-[11px] leading-relaxed text-rose-200">
+                {error}
+              </div>
+            )}
+          </div>
+
+          <p className="mt-5 text-center text-[10px] leading-relaxed text-slate-500">
+            By signing in you agree that your practice sessions are stored in your account.
+          </p>
         </div>
-
-        <p className="text-center text-[11px] text-slate-500">
-          By signing in you agree that your practice sessions are stored in your account.
-        </p>
       </div>
     </div>
   );

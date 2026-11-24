@@ -10,6 +10,7 @@ import {
   usageTone,
   usedSecondsFor,
 } from '../lib/usage';
+import { cx } from './ui';
 
 export interface UsageMeterProps {
   usage: PracticeUsage | null;
@@ -21,13 +22,13 @@ export interface UsageMeterProps {
 }
 
 const TONE_PILL: Record<UsageTone, string> = {
-  ok: 'bg-slate-900 border-slate-800 text-slate-300',
-  low: 'bg-amber-500/10 border-amber-500/40 text-amber-300',
-  empty: 'bg-rose-500/10 border-rose-500/40 text-rose-300',
+  ok: 'border-white/10 bg-white/[0.04] text-slate-300',
+  low: 'border-amber-400/30 bg-amber-400/10 text-amber-300',
+  empty: 'border-rose-500/30 bg-rose-500/10 text-rose-300',
 };
 
 const TONE_BAR: Record<UsageTone, string> = {
-  ok: 'bg-primary',
+  ok: 'bg-gradient-to-r from-primary to-accent-cyan',
   low: 'bg-amber-400',
   empty: 'bg-rose-500',
 };
@@ -53,11 +54,11 @@ export const UsagePill: React.FC<UsageMeterProps> = ({ usage, liveSeconds, isLiv
   if (error && !usage) {
     return (
       <div
-        className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/40 text-[11px] font-mono text-amber-300"
+        className="flex items-center gap-1.5 rounded-xl border border-amber-400/30 bg-amber-400/10 px-2.5 py-1.5 font-mono text-[11px] text-amber-300"
         title={error}
       >
-        <AlertTriangle className="w-3.5 h-3.5" />
-        <span>Usage unavailable</span>
+        <AlertTriangle className="h-3.5 w-3.5" />
+        <span className="hidden sm:inline">Usage unavailable</span>
       </div>
     );
   }
@@ -70,12 +71,15 @@ export const UsagePill: React.FC<UsageMeterProps> = ({ usage, liveSeconds, isLiv
 
   return (
     <div
-      className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-full border text-[11px] font-mono transition-colors ${TONE_PILL[tone]}`}
+      className={cx(
+        'flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 font-mono text-[11px] tabular-nums transition-colors',
+        TONE_PILL[tone],
+      )}
       title={tooltip(usage, used, remaining)}
     >
-      <Timer className="w-3.5 h-3.5" />
+      <Timer className="h-3.5 w-3.5" />
       <span>{label}</span>
-      {isLive && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
+      {isLive && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />}
     </div>
   );
 };
@@ -89,16 +93,13 @@ export const UsageCard: React.FC<UsageMeterProps> = ({ usage, liveSeconds, isLiv
   const percent = limit && limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
 
   return (
-    <div
-      className="rounded-2xl border border-slate-800 bg-slate-900/60 px-3 py-2.5"
-      title={tooltip(usage, used, remaining)}
-    >
-      <div className="flex items-center justify-between text-[11px] font-mono">
-        <span className="flex items-center space-x-1.5 text-slate-400">
-          <Timer className="w-3.5 h-3.5 text-cyan-400" />
-          <span>Today's practice</span>
+    <div className="rounded-2xl border border-white/[0.06] bg-black/25 px-3.5 py-3" title={tooltip(usage, used, remaining)}>
+      <div className="flex items-center justify-between text-[11px]">
+        <span className="eyebrow flex items-center gap-1.5">
+          <Timer className="h-3 w-3 text-cyan-400" />
+          Today&apos;s practice
         </span>
-        <span className="text-slate-200">
+        <span className="font-mono tabular-nums text-slate-200">
           {error && !usage
             ? 'unavailable'
             : limit === null
@@ -108,16 +109,16 @@ export const UsageCard: React.FC<UsageMeterProps> = ({ usage, liveSeconds, isLiv
       </div>
 
       {limit !== null && (
-        <div className="mt-2 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+        <div className="mt-2.5 h-1 overflow-hidden rounded-full bg-white/[0.07]">
           <div
-            className={`h-full rounded-full transition-all duration-500 ${TONE_BAR[tone]}`}
+            className={cx('h-full rounded-full transition-all duration-700', TONE_BAR[tone])}
             style={{ width: `${percent}%` }}
           />
         </div>
       )}
 
-      <div className="mt-1.5 flex items-center justify-between text-[10px] font-mono text-slate-500">
-        <span className={isLive ? 'text-slate-300' : undefined}>
+      <div className="mt-2 flex items-center justify-between font-mono text-[10px] text-slate-500">
+        <span className={isLive ? 'text-emerald-300' : undefined}>
           {isLive ? `This call ${formatClock(liveSeconds)}` : 'Resets at midnight UTC'}
         </span>
         <span className={tone === 'empty' ? 'text-rose-300' : undefined}>

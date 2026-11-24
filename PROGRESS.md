@@ -229,3 +229,29 @@
 - **Verification Results**: `backend/.venv/bin/python -m pytest -q` → 250 passed; `npm test` → 17 passed; `npm run build` → success (498 kB / 134 kB gzip).
 - **Decisions**: the word bank stores no audio and no transcript snippets beyond the corrected sentence; streaks count sessions of at least 30 s so an accidental 5-second tap does not fake a habit; `WEEKLY_SESSION_GOAL` is a target only (never an access limit); the focus text is per-call and not persisted, so no new column was needed.
 - **Needs human check**: start a call with a focus typed and confirm the coach opens on that topic and remembers the previous report's advice; finish a 30+ word session and confirm cards appear in `#/words`, then review one and see the next date change; check a report shows "Your best moment"; confirm the header badge counts down after reviews; run `alembic upgrade head` on a real Supabase database (SQLite tests do not exercise the migration).
+
+## UI/UX Revamp: Premium Interface Pass
+- **Status**: Completed (frontend only; no backend, audio or API behaviour changed)
+
+- **Design system**:
+  - `frontend/tailwind.config.js`: new ink-and-iris palette (`background #07080B`, `surface #0E1016`, `primary #7C6CFF` with `hover`/`glow`/`deep`), `font-display` = Instrument Serif for headings, `boxShadow.card/lift/glow`, `rounded-4xl`, and motion tokens (`fade-up`, `fade-in`, `scale-in`, `breathe`).
+  - `frontend/src/index.css`: layered radial background, refined scrollbars, `:focus-visible` ring, `text-wrap: balance`, `prefers-reduced-motion` guard, and shared component classes (`.panel`, `.panel-strong`, `.card-hover`, `.btn*`, `.field`, `.chip`, `.skeleton`, `.eyebrow`).
+  - `frontend/src/components/ui.tsx` (new): `Page`, `PageHeader`, `SectionCard`, `StatTile`, `SkeletonLines`, `ErrorNote`, `EmptyState`, `RefreshButton`, `cx`.
+  - `frontend/index.html`: correct title/description/theme colour, Instrument Serif added to the font request.
+
+- **Navigation and shell** (`frontend/src/App.tsx`):
+  - Desktop sidebar (brand, workspace nav with due-count badge, status card, account row) replaces the cramped header tabs; mobile gets a bottom tab bar with an active indicator and a compact header.
+  - Header now carries only ambient state: connection status, daily-allowance pill, mute and echo-shield toggles, settings. The duplicate "Start call" header button was removed — the cockpit dock is the single primary action.
+  - Coaching tools panel is collapsible (closed by default) so the transcript owns the space; practice panel is limited width on desktop and stacks on mobile.
+
+- **Screens restyled on the shared primitives**: `LoginScreen.tsx` (split brand/story + form), `TranscriptView.tsx`, `UsageMeter.tsx`, `ReportCharts.tsx`, `ProgressView.tsx`, `WordBankView.tsx`, `SessionsList.tsx`, `SessionTranscriptView.tsx`, `ReportView.tsx`, `SettingsModal.tsx` (Escape/backdrop close), `ToolActivityCard.tsx`, `ScreenPreview.tsx`, `AuthGate.tsx`.
+  - Loading states use skeletons instead of spinners where content is known; empty and error states are consistent.
+  - Word bank gained a client-side search over term/alternatives/note and a "next review" label per card.
+
+- **Unchanged on purpose**: `VoiceOrb.tsx`, `audio-player.ts`, `pcm-recorder.worklet.js`, `useLiveSession.ts` and every backend file. No new dependency was added (no icon or animation library).
+
+- **Verification Results**: `npm run build` → success (496 kB / 137 kB gzip, tsc strict clean); `npm test` → 17 passed. Visually checked the practice cockpit at 1280x800 and 390x844 through a temporary preview entry (`dev-preview.html` + `src/devPreview.tsx`), both since removed along with the temporary `allowedHosts` edit to `vite.config.ts`.
+
+- **Decisions**: kept the existing hash router (no routing library), kept the dependency-free SVG charts, and reused the existing palette token names (`primary`, `surface`, `background`) so no page needed a behavioural change. `VoiceOrb`'s internal "OMNICOPILOT READY" label was left alone because that file is on the do-not-touch audio list.
+
+- **Needs human check**: signed-in pass over every page in the real app (login → practice → report → word bank → progress → sessions); a live call to confirm the orb, vision preview and tool cards sit correctly in the new panels; mobile Safari/Chrome safe-area spacing on the bottom nav; dark-mode contrast on a low-brightness laptop screen.

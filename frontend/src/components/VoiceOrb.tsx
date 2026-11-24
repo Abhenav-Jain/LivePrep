@@ -132,7 +132,13 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({ state, userVolume, agentVolu
         height={280}
         className="w-[180px] h-[180px] sm:w-[240px] sm:h-[240px] transition-transform duration-300"
       />
-      <div className="mt-1 flex items-center space-x-2 px-3 py-1 rounded-full bg-surface/90 backdrop-blur-md border border-slate-800 text-[11px] font-mono font-medium tracking-wide shadow-lg">
+      <div
+        className={`mt-1 flex items-center space-x-2 px-3.5 py-1 rounded-full bg-surface/90 backdrop-blur-md border text-[11px] font-mono font-medium tracking-wide transition-all duration-500 ${
+          state === 'idle'
+            ? 'border-primary/30 shadow-[0_0_28px_-8px_rgba(124,108,255,0.75)]'
+            : 'border-slate-800 shadow-lg'
+        }`}
+      >
         <span
           className={`w-2 h-2 rounded-full ${
             state === 'speaking'
@@ -144,9 +150,15 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({ state, userVolume, agentVolu
               : 'bg-slate-500'
           }`}
         />
-        <span className="uppercase text-slate-300">
+        <span
+          className={
+            state === 'idle'
+              ? 'bg-gradient-to-r from-primary-glow via-white to-cyan-300 bg-clip-text font-semibold uppercase tracking-[0.22em] text-transparent'
+              : 'uppercase text-slate-300'
+          }
+        >
           {state === 'idle'
-            ? 'OmniCopilot Ready'
+            ? 'LivePrep Ready'
             : state === 'listening'
             ? 'Listening to you...'
             : state === 'thinking'

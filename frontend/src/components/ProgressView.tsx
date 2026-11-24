@@ -1,16 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import {
-  AlertCircle,
-  ArrowLeft,
   ArrowRight,
   BarChart3,
   CalendarDays,
   Clock,
   Flame,
-  RefreshCw,
   Target,
-  Trophy,
   TrendingUp,
+  Trophy,
 } from 'lucide-react';
 import {
   fetchProgress,
@@ -20,36 +17,22 @@ import {
   describeApiError,
 } from '../lib/api';
 import { ScoreBar, ScoreRing, TrendChart, scoreTone } from './ReportCharts';
+import {
+  EmptyState,
+  ErrorNote,
+  Page,
+  PageHeader,
+  RefreshButton,
+  SectionCard,
+  SkeletonLines,
+  StatTile,
+  cx,
+} from './ui';
 
 interface ProgressViewProps {
   onBack: () => void;
   onOpenReport: (id: string) => void;
 }
-
-const HabitCard: React.FC<{
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  hint: string;
-  progress?: number | null;
-}> = ({ icon, label, value, hint, progress }) => (
-  <div className="rounded-2xl bg-surface/60 border border-slate-800/80 p-4">
-    <div className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-slate-500">
-      {icon}
-      <span>{label}</span>
-    </div>
-    <div className="text-2xl font-bold text-slate-100 tabular-nums mt-1">{value}</div>
-    {typeof progress === 'number' && (
-      <div className="mt-2 h-1.5 rounded-full bg-slate-800 overflow-hidden">
-        <div
-          className="h-full rounded-full bg-cyan-400 transition-all duration-500"
-          style={{ width: `${Math.round(Math.min(1, Math.max(0, progress)) * 100)}%` }}
-        />
-      </div>
-    )}
-    <p className="text-[10px] text-slate-500 mt-1.5">{hint}</p>
-  </div>
-);
 
 const SKILLS: { key: keyof ProgressEntry['scores']; label: string }[] = [
   { key: 'fluency', label: 'Fluency' },
@@ -112,66 +95,54 @@ export const ProgressView: React.FC<ProgressViewProps> = ({ onBack, onOpenReport
       : '—';
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 sm:p-6 max-w-5xl mx-auto w-full">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={onBack}
-            className="p-2 rounded-lg bg-surface border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white transition-colors"
-            title="Back to the practice call"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div>
-            <h2 className="text-xl font-bold text-white tracking-wide flex items-center space-x-2">
-              <TrendingUp className="w-5 h-5 text-primary" />
-              <span>Your Progress</span>
-            </h2>
-            <p className="text-xs text-slate-400 mt-0.5">Overall score of your last {entries.length || 10} sessions</p>
-          </div>
-        </div>
-        <button
-          onClick={load}
-          disabled={loading}
-          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-surface border border-slate-800 hover:border-slate-700 text-xs text-slate-300 hover:text-white transition-colors disabled:opacity-50"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          <span>Refresh</span>
-        </button>
-      </div>
+    <Page>
+      <PageHeader
+        eyebrow="Your journey"
+        title="Progress"
+        icon={<TrendingUp className="h-6 w-6 text-primary-glow" />}
+        description={
+          entries.length > 0
+            ? `Based on your last ${entries.length} scored sessions.`
+            : 'Your scores, habits and streak — one honest picture of your speaking.'
+        }
+        onBack={onBack}
+        backLabel="Back to practice"
+        actions={<RefreshButton onClick={() => void load()} loading={loading} />}
+      />
 
       {loading && (
-        <div className="flex flex-col items-center justify-center py-20 text-slate-400 space-y-3">
-          <RefreshCw className="w-8 h-8 animate-spin text-primary" />
-          <p className="text-sm">Loading your progress...</p>
-        </div>
-      )}
-
-      {error && !loading && (
-        <div className="p-4 rounded-xl bg-red-950/40 border border-red-800/60 text-red-300 flex items-start space-x-3">
-          <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0 text-red-400" />
-          <div>
-            <p className="text-sm font-medium">{error}</p>
-            <button onClick={load} className="mt-2 text-xs text-red-200 underline hover:text-white">
-              Try again
-            </button>
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="panel space-y-3 p-4">
+                <div className="skeleton h-2.5 w-20" />
+                <div className="skeleton h-7 w-14" />
+                <div className="skeleton h-2 w-full" />
+              </div>
+            ))}
+          </div>
+          <div className="panel p-5">
+            <SkeletonLines rows={4} />
           </div>
         </div>
       )}
+
+      {error && !loading && <ErrorNote message={error} onRetry={() => void load()} />}
 
       {/* Habit stats: streak, weekly goal, total time, words to review */}
       {!loading && !error && stats && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-          <HabitCard
-            icon={<Flame className="w-4 h-4 text-amber-400" />}
+        <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <StatTile
             label="Day streak"
-            value={String(stats.streak_days)}
+            value={stats.streak_days}
+            icon={<Flame className="h-4 w-4 text-amber-400" />}
             hint={stats.streak_days > 0 ? 'Keep it alive today' : 'One session starts it'}
           />
-          <HabitCard
-            icon={<Target className="w-4 h-4 text-cyan-400" />}
+          <StatTile
             label="This week"
-            value={stats.weekly_goal ? `${stats.sessions_this_week}/${stats.weekly_goal}` : String(stats.sessions_this_week)}
+            value={stats.weekly_goal ? `${stats.sessions_this_week}/${stats.weekly_goal}` : stats.sessions_this_week}
+            icon={<Target className="h-4 w-4 text-cyan-400" />}
+            progress={stats.weekly_goal_progress}
             hint={
               stats.weekly_goal
                 ? stats.weekly_goal_met
@@ -179,142 +150,131 @@ export const ProgressView: React.FC<ProgressViewProps> = ({ onBack, onOpenReport
                   : `${Math.max(0, stats.weekly_goal - stats.sessions_this_week)} more to reach your goal`
                 : 'Sessions this week'
             }
-            progress={stats.weekly_goal_progress}
           />
-          <HabitCard
-            icon={<Clock className="w-4 h-4 text-purple-400" />}
-            label="Minutes practised"
-            value={String(stats.minutes_total)}
+          <StatTile
+            label="Minutes"
+            value={stats.minutes_total}
+            icon={<Clock className="h-4 w-4 text-purple-300" />}
             hint={`${stats.minutes_this_week} this week`}
           />
-          <HabitCard
-            icon={<BarChart3 className="w-4 h-4 text-emerald-400" />}
+          <StatTile
             label="Words to review"
-            value={String(stats.wordbank.due)}
+            value={stats.wordbank.due}
+            icon={<BarChart3 className="h-4 w-4 text-emerald-400" />}
             hint={`${stats.wordbank.mastered} mastered of ${stats.wordbank.total}`}
           />
         </div>
       )}
 
       {!loading && !error && stats?.weakest_skill && entries.length > 0 && (
-        <div className="mb-4 px-4 py-3 rounded-xl bg-surface/50 border border-slate-800/80 flex items-start gap-2 text-xs text-slate-300">
-          <Target className="w-4 h-4 text-amber-300 mt-0.5 flex-shrink-0" />
-          <span>
-            Your weakest area so far is <strong className="text-slate-100">{stats.weakest_skill.label}</strong>{' '}
-            ({stats.weakest_skill.score}/100). Make it today&apos;s focus before you start a call.
-          </span>
+        <div className="mb-4 flex items-start gap-3 rounded-2xl border border-amber-400/20 bg-amber-400/[0.06] px-4 py-3">
+          <Target className="mt-0.5 h-4 w-4 flex-none text-amber-300" />
+          <p className="text-xs leading-relaxed text-slate-300">
+            Your weakest area so far is{' '}
+            <strong className="font-semibold text-white">{stats.weakest_skill.label}</strong>{' '}
+            <span className="font-mono text-[11px] text-amber-200/80">({stats.weakest_skill.score}/100)</span>. Make it
+            today&apos;s focus before you start a call.
+          </p>
         </div>
       )}
 
       {!loading && !error && entries.length === 0 && (
-        <div className="text-center py-20 bg-surface/40 border border-slate-800/80 rounded-2xl p-8">
-          <BarChart3 className="w-12 h-12 mx-auto text-slate-600 mb-3" />
-          <h3 className="text-base font-semibold text-slate-200">No scored sessions yet</h3>
-          <p className="text-sm text-slate-400 mt-1 max-w-sm mx-auto">
-            Finish a conversation with at least a few full answers and your scores will appear here.
-          </p>
-          <button
-            onClick={onBack}
-            className="mt-5 px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-sm font-medium shadow-lg shadow-blue-500/20 transition-all"
-          >
-            Start Practice Call
-          </button>
-        </div>
+        <EmptyState
+          icon={<BarChart3 className="h-5 w-5" />}
+          title="No scored sessions yet"
+          description="Finish a conversation with a few full answers and your scores, streak and trend appear here."
+          action={
+            <button onClick={onBack} className="btn-primary px-4 py-2.5">
+              Start a practice call
+            </button>
+          }
+        />
       )}
 
       {!loading && !error && entries.length > 0 && latest && (
-        <div className="space-y-4 pb-10">
+        <div className="space-y-4 pb-6">
           {/* Summary */}
-          <div className="rounded-2xl bg-gradient-to-br from-surface/90 to-slate-900/80 border border-slate-800/80 p-5 flex flex-col sm:flex-row items-center gap-6">
+          <section className="panel flex flex-col items-center gap-6 p-5 sm:flex-row sm:p-6">
             <ScoreRing value={latest.overall} caption="Latest" />
-            <div className="grid grid-cols-2 gap-4 flex-1 w-full text-center sm:text-left">
+            <div className="grid w-full flex-1 grid-cols-2 gap-4 text-center sm:text-left">
               <div>
-                <div className="flex items-center justify-center sm:justify-start gap-1.5 text-[10px] font-mono uppercase tracking-wider text-slate-500">
-                  <Trophy className="w-3 h-3 text-amber-400" /> Best
+                <div className="eyebrow flex items-center justify-center gap-1.5 sm:justify-start">
+                  <Trophy className="h-3 w-3 text-amber-400" /> Best
                 </div>
-                <div className={`text-2xl font-bold tabular-nums ${scoreTone(best)}`}>{best ?? '—'}</div>
+                <div className={cx('mt-1 font-display text-2xl tabular-nums', scoreTone(best))}>{best ?? '—'}</div>
               </div>
               <div>
-                <div className="flex items-center justify-center sm:justify-start gap-1.5 text-[10px] font-mono uppercase tracking-wider text-slate-500">
-                  <BarChart3 className="w-3 h-3 text-cyan-400" /> Sessions
+                <div className="eyebrow flex items-center justify-center gap-1.5 sm:justify-start">
+                  <BarChart3 className="h-3 w-3 text-cyan-400" /> Sessions
                 </div>
-                <div className="text-2xl font-bold tabular-nums text-slate-100">{entries.length}</div>
+                <div className="mt-1 font-display text-2xl tabular-nums text-white">{entries.length}</div>
               </div>
               <div>
-                <div className="flex items-center justify-center sm:justify-start gap-1.5 text-[10px] font-mono uppercase tracking-wider text-slate-500">
-                  <TrendingUp className="w-3 h-3 text-emerald-400" /> Change
+                <div className="eyebrow flex items-center justify-center gap-1.5 sm:justify-start">
+                  <TrendingUp className="h-3 w-3 text-emerald-400" /> Change
                 </div>
                 <div
-                  className={`text-2xl font-bold tabular-nums ${
-                    improvement === null ? 'text-slate-400' : improvement >= 0 ? 'text-emerald-400' : 'text-rose-400'
-                  }`}
+                  className={cx(
+                    'mt-1 font-display text-2xl tabular-nums',
+                    improvement === null ? 'text-slate-400' : improvement >= 0 ? 'text-emerald-400' : 'text-rose-400',
+                  )}
                 >
                   {improvement === null ? '—' : `${improvement >= 0 ? '+' : ''}${improvement}`}
                 </div>
               </div>
               <div>
-                <div className="flex items-center justify-center sm:justify-start gap-1.5 text-[10px] font-mono uppercase tracking-wider text-slate-500">
-                  <CalendarDays className="w-3 h-3 text-purple-400" /> Latest session
+                <div className="eyebrow flex items-center justify-center gap-1.5 sm:justify-start">
+                  <CalendarDays className="h-3 w-3 text-purple-300" /> Latest
                 </div>
-                <div className="text-sm font-semibold text-slate-200 mt-1">{formatDate(entries[0].started_at)}</div>
+                <div className="mt-1.5 text-sm font-semibold text-slate-200">{formatDate(entries[0].started_at)}</div>
               </div>
             </div>
-          </div>
+          </section>
 
-          {/* Trend */}
-          <div className="rounded-2xl bg-surface/50 border border-slate-800/80 p-4 sm:p-5">
-            <h3 className="text-xs font-mono uppercase tracking-wider text-slate-400 mb-2">
-              Overall score trend
-            </h3>
+          <SectionCard title="Overall score trend" icon={<TrendingUp className="h-3.5 w-3.5 text-primary-glow" />}>
             {points.length >= 1 ? (
               <TrendChart points={points} />
             ) : (
-              <p className="text-sm text-slate-400 py-6 text-center">
-                Your reports do not have scores yet.
-              </p>
+              <p className="py-6 text-center text-sm text-slate-400">Your reports do not have scores yet.</p>
             )}
-          </div>
+          </SectionCard>
 
-          {/* Averages per skill */}
-          <div className="rounded-2xl bg-surface/50 border border-slate-800/80 p-4">
-            <h3 className="text-xs font-mono uppercase tracking-wider text-slate-400 mb-3">
-              Average by skill
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <SectionCard title="Average by skill" icon={<BarChart3 className="h-3.5 w-3.5 text-cyan-400" />}>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {averages.map(({ key, label, avg }) => (
                 <ScoreBar key={key} label={label} value={avg} />
               ))}
             </div>
-          </div>
+          </SectionCard>
 
-          {/* Session history */}
-          <div className="rounded-2xl bg-surface/50 border border-slate-800/80 p-4">
-            <h3 className="text-xs font-mono uppercase tracking-wider text-slate-400 mb-3">Recent reports</h3>
+          <SectionCard title="Recent reports" icon={<CalendarDays className="h-3.5 w-3.5 text-purple-300" />}>
             <div className="space-y-2">
               {entries.map((entry) => (
                 <button
                   key={entry.session_id}
                   onClick={() => onOpenReport(entry.session_id)}
-                  className="w-full flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-900/60 border border-slate-800/70 hover:border-primary/40 hover:bg-slate-800/60 transition-colors text-left"
+                  className="group flex w-full items-center justify-between gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 text-left transition-all duration-200 hover:border-primary/30 hover:bg-white/[0.05]"
                 >
                   <div>
-                    <div className="text-sm font-medium text-slate-200 capitalize">
+                    <div className="text-sm font-medium capitalize text-slate-200">
                       {entry.scenario ? entry.scenario.replace('_', ' ') : 'Practice session'}
                     </div>
-                    <div className="text-[11px] text-slate-500">{formatDate(entry.started_at)}</div>
+                    <div className="mt-0.5 font-mono text-[10px] uppercase tracking-wider text-slate-500">
+                      {formatDate(entry.started_at)}
+                    </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className={`text-lg font-bold tabular-nums ${scoreTone(entry.scores.overall)}`}>
+                    <span className={cx('font-display text-xl tabular-nums', scoreTone(entry.scores.overall))}>
                       {entry.scores.overall ?? '—'}
                     </span>
-                    <ArrowRight className="w-4 h-4 text-slate-600" />
+                    <ArrowRight className="h-4 w-4 text-slate-600 transition-transform group-hover:translate-x-0.5 group-hover:text-slate-300" />
                   </div>
                 </button>
               ))}
             </div>
-          </div>
+          </SectionCard>
         </div>
       )}
-    </div>
+    </Page>
   );
 };

@@ -10,14 +10,15 @@ export const AuthGate: React.FC = () => {
 
   if (!configured) {
     return (
-      <div className="min-h-screen w-screen flex items-center justify-center p-6 bg-background text-slate-100">
-        <div className="max-w-md rounded-2xl bg-surface border border-slate-700/80 p-6 space-y-3">
-          <h1 className="text-lg font-bold text-white">Login is not configured</h1>
-          <p className="text-sm text-slate-300">
+      <div className="flex min-h-[100dvh] w-screen items-center justify-center p-6 text-slate-100">
+        <div className="panel-strong max-w-md space-y-3 p-6">
+          <h1 className="font-display text-2xl text-white">Login is not configured</h1>
+          <p className="text-sm leading-relaxed text-slate-300">
             Set <code className="font-mono text-primary-glow">VITE_SUPABASE_URL</code> and{' '}
             <code className="font-mono text-primary-glow">VITE_SUPABASE_PUBLISHABLE_KEY</code> in{' '}
-            <code className="font-mono">frontend/.env</code> (see <code className="font-mono">frontend/.env.example</code>),
-            then restart the dev server or rebuild.
+            <code className="font-mono text-slate-200">frontend/.env</code> (see{' '}
+            <code className="font-mono text-slate-200">frontend/.env.example</code>), then restart the dev
+            server or rebuild.
           </p>
         </div>
       </div>
@@ -26,8 +27,8 @@ export const AuthGate: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen w-screen flex items-center justify-center bg-background text-slate-400">
-        <Loader2 className="w-6 h-6 animate-spin" aria-label="Loading" />
+      <div className="flex min-h-[100dvh] w-screen items-center justify-center text-slate-500">
+        <Loader2 className="h-6 w-6 animate-spin" aria-label="Loading" />
       </div>
     );
   }

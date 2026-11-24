@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
-import { User, Sparkles, Clock } from 'lucide-react';
+import { Clock, Sparkles, User } from 'lucide-react';
 import { TranscriptItem } from '../audio/useLiveSession';
+import { cx } from './ui';
 
 interface TranscriptViewProps {
   transcripts: TranscriptItem[];
@@ -9,9 +10,9 @@ interface TranscriptViewProps {
 
 const SUGGESTED_PROMPTS = [
   "Let's have a free-flow conversation. Ask me about my day.",
-  "I want to practise English. Pick an easy topic for me.",
+  'I want to practise English. Pick an easy topic for me.',
   "Let's talk about films, food and travel.",
-  "Correct my grammar gently while we chat.",
+  'Correct my grammar gently while we chat.',
 ];
 
 export const TranscriptView: React.FC<TranscriptViewProps> = ({
@@ -27,99 +28,101 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
   }, [transcripts]);
 
   return (
-    <div className="flex flex-col h-full rounded-2xl bg-surface/70 border border-slate-800/80 backdrop-blur-xl overflow-hidden shadow-xl">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800/80 bg-slate-900/40">
-        <div className="flex items-center space-x-2">
-          <Sparkles className="w-4 h-4 text-primary-glow" />
-          <h2 className="text-sm font-semibold tracking-wide text-slate-200">
-            Live Multimodal Transcript
-          </h2>
+    <div className="panel-strong flex h-full flex-col overflow-hidden">
+      <div className="flex flex-none items-center justify-between border-b border-white/[0.06] px-4 py-3">
+        <div className="flex items-center gap-2">
+          <span className="grid h-6 w-6 place-items-center rounded-lg bg-primary/15 text-primary-glow">
+            <Sparkles className="h-3.5 w-3.5" />
+          </span>
+          <h2 className="text-[13px] font-semibold text-slate-200">Live transcript</h2>
         </div>
-        <span className="text-[11px] font-mono text-slate-400">
+        <span className="font-mono text-[10px] uppercase tracking-wider text-slate-500">
           {transcripts.length} {transcripts.length === 1 ? 'turn' : 'turns'}
         </span>
       </div>
 
-      <div
-        ref={scrollRef}
-        className="flex-1 overflow-y-auto p-4 space-y-4 scroll-smooth scrollbar-thin scrollbar-thumb-slate-700"
-      >
+      <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-4">
         {transcripts.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-4">
-            <div className="p-3 rounded-2xl bg-primary/10 border border-primary/20 text-primary-glow">
-              <Sparkles className="w-8 h-8 animate-pulse" />
+          <div className="flex h-full flex-col items-center justify-center gap-5 px-2 py-6 text-center">
+            <div className="relative grid h-14 w-14 place-items-center">
+              <span
+                aria-hidden
+                className="absolute inset-0 animate-breathe rounded-full bg-primary/25 blur-xl"
+              />
+              <span className="relative grid h-12 w-12 place-items-center rounded-2xl border border-primary/25 bg-primary/10 text-primary-glow">
+                <Sparkles className="h-5 w-5" />
+              </span>
             </div>
-            <div className="space-y-1">
-              <p className="text-sm font-semibold text-slate-300">
-                Ready for Voice, Vision, or Text Input
-              </p>
-              <p className="text-xs text-slate-400 max-w-sm">
-                Speak into your mic, share your screen, or click a suggestion below to begin.
+            <div className="space-y-1.5">
+              <p className="font-display text-xl text-white">Your coach is listening</p>
+              <p className="mx-auto max-w-xs text-xs leading-relaxed text-slate-400">
+                Speak naturally, share your screen, or start with one of these openers.
               </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-md pt-2">
-              {SUGGESTED_PROMPTS.map((prompt, i) => (
+            <div className="grid w-full max-w-md grid-cols-1 gap-2 sm:grid-cols-2">
+              {SUGGESTED_PROMPTS.map((prompt) => (
                 <button
-                  key={i}
+                  key={prompt}
                   onClick={() => onSuggestedPromptClick?.(prompt)}
-                  className="text-left p-2.5 rounded-xl bg-slate-800/50 hover:bg-slate-800 border border-slate-700/50 hover:border-primary/40 text-xs text-slate-300 transition-all hover:scale-[1.01]"
+                  className="rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 py-2.5 text-left text-[11px] leading-snug text-slate-300 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/35 hover:bg-primary/[0.08] hover:text-white"
                 >
-                  "{prompt}"
+                  {prompt}
                 </button>
               ))}
             </div>
           </div>
         ) : (
-          transcripts.map((item) => (
-            <div
-              key={item.id}
-              className={`flex items-start space-x-3 ${
-                item.sender === 'user' ? 'justify-end' : 'justify-start'
-              }`}
-            >
-              {item.sender === 'agent' && (
-                <div className="flex-shrink-0 w-8 h-8 rounded-xl bg-gradient-to-tr from-primary to-purple-600 flex items-center justify-center text-white shadow-md shadow-primary/20">
-                  <Sparkles className="w-4 h-4" />
-                </div>
-              )}
-
+          transcripts.map((item) => {
+            const isUser = item.sender === 'user';
+            return (
               <div
-                className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-lg ${
-                  item.sender === 'user'
-                    ? 'bg-blue-600/90 text-white border border-blue-400/30 rounded-tr-sm'
-                    : 'bg-slate-800/90 text-slate-100 border border-slate-700/70 rounded-tl-sm'
-                }`}
+                key={item.id}
+                className={cx('flex items-start gap-2.5', isUser ? 'justify-end' : 'justify-start')}
               >
-                <div className="flex items-center justify-between space-x-4 mb-1">
-                  <span
-                    className={`text-[10px] font-mono uppercase tracking-wider font-semibold ${
-                      item.sender === 'user' ? 'text-blue-200' : 'text-purple-300'
-                    }`}
-                  >
-                    {item.sender === 'user' ? 'You' : 'Coach'}
-                  </span>
-                  <span className="text-[10px] font-mono opacity-50 flex items-center space-x-1">
-                    <Clock className="w-2.5 h-2.5" />
-                    <span>
+                {!isUser && (
+                  <div className="grid h-8 w-8 flex-none place-items-center rounded-xl bg-gradient-to-br from-primary to-accent-cyan text-white shadow-glow">
+                    <Sparkles className="h-3.5 w-3.5" />
+                  </div>
+                )}
+
+                <div
+                  className={cx(
+                    'max-w-[85%] animate-fade-up rounded-2xl border px-4 py-2.5 text-sm leading-relaxed',
+                    isUser
+                      ? 'rounded-tr-sm border-primary/25 bg-primary/[0.14] text-slate-100'
+                      : 'rounded-tl-sm border-white/[0.07] bg-white/[0.04] text-slate-100',
+                  )}
+                >
+                  <div className="mb-1 flex items-center justify-between gap-4">
+                    <span
+                      className={cx(
+                        'font-mono text-[9px] uppercase tracking-[0.16em]',
+                        isUser ? 'text-primary-glow' : 'text-cyan-300/80',
+                      )}
+                    >
+                      {isUser ? 'You' : 'Coach'}
+                    </span>
+                    <span className="flex items-center gap-1 font-mono text-[9px] text-slate-500">
+                      <Clock className="h-2.5 w-2.5" />
                       {item.timestamp.toLocaleTimeString([], {
                         hour: '2-digit',
                         minute: '2-digit',
                         second: '2-digit',
                       })}
                     </span>
-                  </span>
+                  </div>
+                  <div className="whitespace-pre-wrap break-words">{item.text}</div>
                 </div>
-                <div className="whitespace-pre-wrap break-words">{item.text}</div>
-              </div>
 
-              {item.sender === 'user' && (
-                <div className="flex-shrink-0 w-8 h-8 rounded-xl bg-slate-700 flex items-center justify-center text-slate-200">
-                  <User className="w-4 h-4" />
-                </div>
-              )}
-            </div>
-          ))
+                {isUser && (
+                  <div className="grid h-8 w-8 flex-none place-items-center rounded-xl border border-white/10 bg-white/[0.06] text-slate-300">
+                    <User className="h-3.5 w-3.5" />
+                  </div>
+                )}
+              </div>
+            );
+          })
         )}
       </div>
     </div>

@@ -1,17 +1,16 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  AlertCircle,
-  ArrowLeft,
   BookOpen,
   Check,
   Eye,
   Plus,
-  RefreshCw,
   RotateCcw,
+  Search,
   Sparkles,
   Trash2,
 } from 'lucide-react';
 import {
+  WordBankItem,
   WordBankResponse,
   createWordBankCard,
   deleteWordBankCard,
@@ -19,15 +18,42 @@ import {
   fetchWordBank,
   reviewWordBankCard,
 } from '../lib/api';
+import {
+  EmptyState,
+  ErrorNote,
+  Page,
+  PageHeader,
+  RefreshButton,
+  SectionCard,
+  SkeletonLines,
+  StatTile,
+  cx,
+} from './ui';
 
 interface WordBankViewProps {
   onBack: () => void;
 }
 
 const STATUS_STYLES: Record<string, string> = {
-  new: 'bg-blue-950/50 text-blue-300 border-blue-800/60',
-  learning: 'bg-amber-950/50 text-amber-300 border-amber-800/60',
-  mastered: 'bg-emerald-950/50 text-emerald-300 border-emerald-800/60',
+  new: 'border-primary/30 bg-primary/10 text-primary-glow',
+  learning: 'border-amber-400/30 bg-amber-400/10 text-amber-300',
+  mastered: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300',
+};
+
+/** "due now" or "in 3 days" — a quick sense of when a card comes back. */
+function nextReviewLabel(item: WordBankItem): string {
+  if (item.due) return 'due now';
+  if (!item.next_review_at) return 'scheduled';
+  const diffMs = new Date(item.next_review_at).getTime() - Date.now();
+  const days = Math.ceil(diffMs / 86_400_000);
+  if (days <= 0) return 'due now';
+  return days === 1 ? 'in 1 day' : `in ${days} days`;
+}
+
+const SOURCE_LABEL: Record<string, string> = {
+  vocabulary: 'vocabulary',
+  grammar: 'correction',
+  manual: 'yours',
 };
 
 /**
@@ -41,6 +67,7 @@ export const WordBankView: React.FC<WordBankViewProps> = ({ onBack }) => {
   const [busy, setBusy] = useState<boolean>(false);
   const [revealed, setRevealed] = useState<boolean>(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [query, setQuery] = useState<string>('');
 
   const [term, setTerm] = useState<string>('');
   const [alternatives, setAlternatives] = useState<string>('');
@@ -65,6 +92,18 @@ export const WordBankView: React.FC<WordBankViewProps> = ({ onBack }) => {
   const dueItems = data?.items.filter((item) => item.due) ?? [];
   const current = dueItems[0] ?? null;
   const summary = data?.summary ?? { total: 0, due: 0, new: 0, learning: 0, mastered: 0 };
+
+  const filtered = useMemo(() => {
+    const items = data?.items ?? [];
+    const needle = query.trim().toLowerCase();
+    if (!needle) return items;
+    return items.filter(
+      (item) =>
+        item.term.toLowerCase().includes(needle) ||
+        item.alternatives.some((alt) => alt.toLowerCase().includes(needle)) ||
+        (item.note ?? '').toLowerCase().includes(needle),
+    );
+  }, [data, query]);
 
   const handleReview = async (result: 'again' | 'good' | 'easy') => {
     if (!current || busy) return;
@@ -134,97 +173,74 @@ export const WordBankView: React.FC<WordBankViewProps> = ({ onBack }) => {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 sm:p-6 max-w-5xl mx-auto w-full">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={onBack}
-            className="p-2 rounded-lg bg-surface border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white transition-colors"
-            title="Back to the practice call"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div>
-            <h2 className="text-xl font-bold text-white tracking-wide flex items-center space-x-2">
-              <BookOpen className="w-5 h-5 text-primary" />
-              <span>Word Bank</span>
-            </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Words and corrections from your reports, reviewed a few at a time.
-            </p>
-          </div>
-        </div>
-        <button
-          onClick={() => void load()}
-          disabled={loading}
-          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-surface border border-slate-800 hover:border-slate-700 text-xs text-slate-300 hover:text-white transition-colors disabled:opacity-50"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          <span>Refresh</span>
-        </button>
-      </div>
+    <Page>
+      <PageHeader
+        eyebrow="Remember what you learn"
+        title="Word bank"
+        icon={<BookOpen className="h-6 w-6 text-primary-glow" />}
+        description="Words and corrections from your reports, reviewed a few at a time so they actually stick."
+        onBack={onBack}
+        backLabel="Back to practice"
+        actions={<RefreshButton onClick={() => void load()} loading={loading} />}
+      />
 
       {error && (
-        <div className="p-4 rounded-xl bg-red-950/40 border border-red-800/60 text-red-300 flex items-start space-x-3 mb-4">
-          <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0 text-red-400" />
-          <div>
-            <p className="text-sm font-medium">{error}</p>
-            <button onClick={() => void load()} className="mt-2 text-xs text-red-200 underline hover:text-white">
-              Try again
-            </button>
-          </div>
+        <div className="mb-4">
+          <ErrorNote message={error} onRetry={() => void load()} />
         </div>
       )}
 
-      {/* Counts */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-        <Stat label="Words saved" value={summary.total} tone="text-slate-100" />
-        <Stat label="Due now" value={summary.due} tone="text-cyan-300" />
-        <Stat label="Learning" value={summary.learning + summary.new} tone="text-amber-300" />
-        <Stat label="Mastered" value={summary.mastered} tone="text-emerald-300" />
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatTile label="Saved" value={summary.total} />
+        <StatTile label="Due now" value={summary.due} valueClassName="text-cyan-300" />
+        <StatTile label="Learning" value={summary.learning + summary.new} valueClassName="text-amber-300" />
+        <StatTile label="Mastered" value={summary.mastered} valueClassName="text-emerald-300" />
       </div>
 
       {notice && (
-        <div className="mb-4 px-3 py-2 rounded-xl bg-primary/10 border border-primary/25 text-xs text-blue-200 flex items-center gap-2">
-          <Check className="w-3.5 h-3.5" />
+        <div className="animate-fade-in mb-4 flex items-center gap-2 rounded-2xl border border-primary/25 bg-primary/[0.08] px-4 py-2.5 text-xs text-primary-glow">
+          <Check className="h-3.5 w-3.5 flex-none" />
           <span>{notice}</span>
         </div>
       )}
 
       {/* Practice card */}
-      <div className="rounded-2xl bg-gradient-to-br from-surface/90 to-slate-900/80 border border-slate-800/80 p-5 mb-4">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-xs font-mono uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 text-primary" /> Today&apos;s practice
-          </h3>
+      <section className="panel-strong relative mb-4 overflow-hidden p-5 sm:p-6">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -right-24 -top-24 h-56 w-56 rounded-full bg-primary/15 blur-3xl"
+        />
+        <div className="relative flex items-center justify-between gap-3">
+          <h2 className="flex items-center gap-2 text-[13px] font-semibold text-slate-200">
+            <Sparkles className="h-3.5 w-3.5 text-primary-glow" />
+            Today&apos;s practice
+          </h2>
           {current && (
-            <span className="text-[10px] font-mono text-slate-500">
-              {dueItems.length} due
-            </span>
+            <span className="chip border-cyan-400/25 bg-cyan-400/10 text-cyan-300">{dueItems.length} due</span>
           )}
         </div>
 
         {loading && !data ? (
-          <p className="text-sm text-slate-400 py-6 text-center">Loading your words…</p>
+          <div className="mt-6">
+            <SkeletonLines rows={3} />
+          </div>
         ) : current ? (
-          <div>
-            <p className="text-[11px] text-slate-500 mb-1">
+          <div className="relative mt-5">
+            <p className="eyebrow mb-2">
               {current.source === 'grammar' ? 'Correction to fix' : 'Say it a better way'}
             </p>
-            <p className="text-2xl font-bold text-white break-words">{current.term}</p>
+            <p className="font-display text-[2rem] leading-tight text-white sm:text-[2.4rem]">{current.term}</p>
 
             {revealed ? (
-              <div className="mt-4 space-y-2">
+              <div className="mt-5 space-y-3">
                 {current.alternatives.length > 0 ? (
                   <div>
-                    <p className="text-[10px] font-mono uppercase tracking-wider text-slate-500 mb-1">
-                      Better version
-                    </p>
+                    <p className="eyebrow mb-2">Better version</p>
                     <div className="flex flex-wrap gap-1.5">
                       {current.alternatives.map((alt) => (
                         <span
                           key={alt}
-                          className="px-2.5 py-1 rounded-full bg-primary/10 border border-primary/25 text-xs text-primary-glow"
+                          className="rounded-full border border-primary/25 bg-primary/10 px-2.5 py-1 text-xs text-primary-glow"
                         >
                           {alt}
                         </span>
@@ -236,158 +252,177 @@ export const WordBankView: React.FC<WordBankViewProps> = ({ onBack }) => {
                     No model answer saved. Try using it in a sentence out loud.
                   </p>
                 )}
-                {current.note && <p className="text-[11px] text-slate-400">{current.note}</p>}
+                {current.note && <p className="text-[11px] leading-relaxed text-slate-400">{current.note}</p>}
               </div>
             ) : (
-              <p className="mt-3 text-xs text-slate-500">
+              <p className="mt-2 text-xs text-slate-500">
                 Say it out loud with a better word, then check yourself.
               </p>
             )}
 
-            <div className="mt-5 flex flex-wrap gap-2">
+            <div className="mt-6 flex flex-wrap gap-2">
               {!revealed ? (
-                <button
-                  onClick={() => setRevealed(true)}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-100 border border-slate-700"
-                >
-                  <Eye className="w-3.5 h-3.5" /> Show answer
+                <button onClick={() => setRevealed(true)} className="btn-ghost px-4 py-2.5">
+                  <Eye className="h-3.5 w-3.5" />
+                  Show answer
                 </button>
               ) : (
                 <>
                   <button
                     onClick={() => void handleReview('again')}
                     disabled={busy}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600/15 hover:bg-rose-600/25 text-xs font-semibold text-rose-300 border border-rose-800/60 disabled:opacity-50"
+                    className="btn gap-1.5 border border-rose-500/30 bg-rose-500/10 px-4 py-2.5 text-rose-300 hover:bg-rose-500/20"
                   >
-                    <RotateCcw className="w-3.5 h-3.5" /> Again
+                    <RotateCcw className="h-3.5 w-3.5" /> Again
                   </button>
                   <button
                     onClick={() => void handleReview('good')}
                     disabled={busy}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary/15 hover:bg-primary/25 text-xs font-semibold text-primary-glow border border-primary/30 disabled:opacity-50"
+                    className="btn gap-1.5 border border-primary/30 bg-primary/15 px-4 py-2.5 text-primary-glow hover:bg-primary/25"
                   >
-                    <Check className="w-3.5 h-3.5" /> Good
+                    <Check className="h-3.5 w-3.5" /> Good
                   </button>
                   <button
                     onClick={() => void handleReview('easy')}
                     disabled={busy}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600/15 hover:bg-emerald-600/25 text-xs font-semibold text-emerald-300 border border-emerald-800/60 disabled:opacity-50"
+                    className="btn gap-1.5 border border-emerald-400/30 bg-emerald-400/10 px-4 py-2.5 text-emerald-300 hover:bg-emerald-400/20"
                   >
-                    <Sparkles className="w-3.5 h-3.5" /> Easy
+                    <Sparkles className="h-3.5 w-3.5" /> Easy
                   </button>
                 </>
               )}
             </div>
           </div>
         ) : (
-          <div className="text-center py-8">
-            <BookOpen className="w-9 h-9 mx-auto text-slate-600 mb-2" />
-            <p className="text-sm text-slate-300">
+          <div className="relative mt-6 flex flex-col items-center py-4 text-center">
+            <div className="grid h-11 w-11 place-items-center rounded-2xl border border-white/10 bg-white/[0.04] text-slate-400">
+              <BookOpen className="h-5 w-5" />
+            </div>
+            <p className="mt-3 max-w-sm text-sm text-slate-300">
               {summary.total === 0
                 ? 'Your word bank is empty. Finish a session and your report fills it automatically.'
                 : 'Nothing due right now. Come back after your next session.'}
             </p>
-            <p className="text-xs text-slate-500 mt-1">
-              Saved words appear here as soon as a report is ready.
-            </p>
+            <p className="mt-1 text-[11px] text-slate-500">Saved words appear here as soon as a report is ready.</p>
           </div>
         )}
-      </div>
+      </section>
 
       {/* Add a word */}
-      <form
-        onSubmit={(event) => void handleAdd(event)}
-        className="rounded-2xl bg-surface/50 border border-slate-800/80 p-4 mb-4"
+      <SectionCard
+        title="Add your own"
+        description="Anything you keep forgetting — a phrase, a spelling, a better word."
+        icon={<Plus className="h-3.5 w-3.5 text-cyan-400" />}
+        className="mb-4"
       >
-        <h3 className="text-xs font-mono uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
-          <Plus className="w-3.5 h-3.5 text-cyan-400" /> Add your own
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <input
-            value={term}
-            onChange={(event) => setTerm(event.target.value)}
-            maxLength={120}
-            placeholder="Word or phrase (e.g. very good)"
-            className="px-3 py-2 rounded-xl bg-slate-900/80 border border-slate-800 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-primary/60"
-          />
-          <input
-            value={alternatives}
-            onChange={(event) => setAlternatives(event.target.value)}
-            placeholder="Better versions, comma separated"
-            className="px-3 py-2 rounded-xl bg-slate-900/80 border border-slate-800 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-primary/60"
-          />
-        </div>
-        <div className="flex flex-col sm:flex-row gap-2 mt-2">
-          <input
-            value={note}
-            onChange={(event) => setNote(event.target.value)}
-            maxLength={300}
-            placeholder="Note (optional)"
-            className="flex-1 px-3 py-2 rounded-xl bg-slate-900/80 border border-slate-800 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-primary/60"
-          />
-          <button
-            type="submit"
-            disabled={busy || !term.trim()}
-            className="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-semibold disabled:opacity-50"
-          >
-            Save word
-          </button>
-        </div>
-      </form>
+        <form onSubmit={(event) => void handleAdd(event)} className="space-y-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <input
+              value={term}
+              onChange={(event) => setTerm(event.target.value)}
+              maxLength={120}
+              placeholder="Word or phrase (e.g. very good)"
+              aria-label="Word or phrase"
+              className="field text-xs"
+            />
+            <input
+              value={alternatives}
+              onChange={(event) => setAlternatives(event.target.value)}
+              placeholder="Better versions, comma separated"
+              aria-label="Better versions"
+              className="field text-xs"
+            />
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <input
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+              maxLength={300}
+              placeholder="Note (optional)"
+              aria-label="Note"
+              className="field flex-1 text-xs"
+            />
+            <button type="submit" disabled={busy || !term.trim()} className="btn-primary px-4 py-2.5">
+              Save word
+            </button>
+          </div>
+        </form>
+      </SectionCard>
 
       {/* All cards */}
       {data && data.items.length > 0 && (
-        <div className="rounded-2xl bg-surface/50 border border-slate-800/80 p-4">
-          <h3 className="text-xs font-mono uppercase tracking-wider text-slate-400 mb-3">
-            All words ({data.items.length})
-          </h3>
-          <div className="space-y-2">
-            {data.items.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-start justify-between gap-3 p-3 rounded-xl bg-slate-900/60 border border-slate-800/70"
-              >
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-medium text-slate-200 break-words">{item.term}</span>
-                    <span
-                      className={`text-[9px] px-1.5 py-0.5 rounded-full font-mono uppercase border ${
-                        STATUS_STYLES[item.status] ?? STATUS_STYLES.new
-                      }`}
-                    >
-                      {item.status}
-                    </span>
-                    <span className="text-[10px] font-mono text-slate-500">
-                      {item.source}
-                    </span>
-                  </div>
-                  {item.alternatives.length > 0 && (
-                    <p className="text-[11px] text-slate-400 mt-1 break-words">
-                      {item.alternatives.join(' · ')}
-                    </p>
-                  )}
-                  {item.note && <p className="text-[10px] text-slate-500 mt-0.5">{item.note}</p>}
-                </div>
-                <button
-                  onClick={() => void handleDelete(item.id)}
-                  disabled={busy}
-                  title="Remove this word"
-                  className="p-1.5 rounded-lg text-slate-500 hover:text-rose-300 hover:bg-rose-950/40 disabled:opacity-40"
+        <SectionCard
+          title={`All words (${data.items.length})`}
+          icon={<BookOpen className="h-3.5 w-3.5 text-primary-glow" />}
+          actions={
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search"
+                aria-label="Search saved words"
+                className="field w-36 py-1.5 pl-8 text-xs sm:w-48"
+              />
+            </div>
+          }
+        >
+          {filtered.length === 0 ? (
+            <EmptyState
+              icon={<Search className="h-5 w-5" />}
+              title="No matching words"
+              description={`Nothing here matches “${query}”. Try a shorter search.`}
+            />
+          ) : (
+            <div className="space-y-2">
+              {filtered.map((item) => (
+                <div
+                  key={item.id}
+                  className="group flex items-start justify-between gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 transition-colors hover:border-white/[0.12]"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="break-words text-sm font-medium text-slate-200">{item.term}</span>
+                      <span
+                        className={cx(
+                          'rounded-full border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider',
+                          STATUS_STYLES[item.status] ?? STATUS_STYLES.new,
+                        )}
+                      >
+                        {item.status}
+                      </span>
+                      <span className="font-mono text-[10px] text-slate-500">
+                        {SOURCE_LABEL[item.source] ?? item.source}
+                      </span>
+                      <span
+                        className={cx(
+                          'font-mono text-[10px]',
+                          item.due ? 'text-cyan-300' : 'text-slate-500',
+                        )}
+                      >
+                        {nextReviewLabel(item)}
+                      </span>
+                    </div>
+                    {item.alternatives.length > 0 && (
+                      <p className="mt-1 break-words text-[11px] text-slate-400">{item.alternatives.join(' · ')}</p>
+                    )}
+                    {item.note && <p className="mt-0.5 text-[10px] text-slate-500">{item.note}</p>}
+                  </div>
+                  <button
+                    onClick={() => void handleDelete(item.id)}
+                    disabled={busy}
+                    title="Remove this word"
+                    aria-label={`Remove ${item.term}`}
+                    className="rounded-lg p-1.5 text-slate-600 transition-colors hover:bg-rose-500/10 hover:text-rose-300 disabled:opacity-40"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </SectionCard>
       )}
-    </div>
+    </Page>
   );
 };
-
-const Stat: React.FC<{ label: string; value: number; tone: string }> = ({ label, value, tone }) => (
-  <div className="rounded-xl bg-surface/60 border border-slate-800/80 p-3 text-center">
-    <div className={`text-2xl font-bold tabular-nums ${tone}`}>{value}</div>
-    <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 mt-0.5">{label}</div>
-  </div>
-);

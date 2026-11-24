@@ -1,12 +1,29 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, Clock, MessageSquare, AlertCircle, RefreshCw, Sparkles } from 'lucide-react';
+import { Clock, History, MessageSquare, Sparkles, ArrowRight } from 'lucide-react';
 import { fetchSessions, SessionSummary, describeApiError } from '../lib/api';
+import {
+  EmptyState,
+  ErrorNote,
+  Page,
+  PageHeader,
+  RefreshButton,
+  SkeletonLines,
+  cx,
+} from './ui';
 
 interface SessionsListProps {
   onSelectSession: (id: string) => void;
   onOpenReport: (id: string) => void;
   onBackToCall: () => void;
 }
+
+const scoreChip = (score: number): string =>
+  score >= 75
+    ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
+    : score >= 50
+    ? 'border-amber-400/30 bg-amber-400/10 text-amber-300'
+    : 'border-rose-500/30 bg-rose-500/10 text-rose-300';
+
 export const SessionsList: React.FC<SessionsListProps> = ({
   onSelectSession,
   onOpenReport,
@@ -52,144 +69,115 @@ export const SessionsList: React.FC<SessionsListProps> = ({
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 sm:p-6 max-w-4xl mx-auto w-full">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={onBackToCall}
-            className="p-2 rounded-lg bg-surface border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white transition-colors"
-            title="Back to the practice call"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <h2 className="text-xl font-bold text-white tracking-wide">Past Sessions</h2>
-        </div>
-        <button
-          onClick={load}
-          disabled={loading}
-          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-surface border border-slate-800 hover:border-slate-700 text-xs text-slate-300 hover:text-white transition-colors disabled:opacity-50"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          <span>Refresh</span>
-        </button>
-      </div>
+    <Page>
+      <PageHeader
+        eyebrow="Your history"
+        title="Past sessions"
+        icon={<History className="h-6 w-6 text-primary-glow" />}
+        description="Every call you have made, with its transcript and report."
+        onBack={onBackToCall}
+        backLabel="Back to practice"
+        actions={<RefreshButton onClick={() => void load()} loading={loading} />}
+      />
 
       {loading && (
-        <div className="flex flex-col items-center justify-center py-20 text-slate-400 space-y-3">
-          <RefreshCw className="w-8 h-8 animate-spin text-primary" />
-          <p className="text-sm">Loading your sessions...</p>
+        <div className="panel p-5">
+          <SkeletonLines rows={5} />
         </div>
       )}
 
-      {error && !loading && (
-        <div className="p-4 rounded-xl bg-red-950/40 border border-red-800/60 text-red-300 flex items-start space-x-3">
-          <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0 text-red-400" />
-          <div>
-            <p className="text-sm font-medium">{error}</p>
-            <button
-              onClick={load}
-              className="mt-2 text-xs text-red-200 underline hover:text-white"
-            >
-              Try again
-            </button>
-          </div>
-        </div>
-      )}
+      {error && !loading && <ErrorNote message={error} onRetry={() => void load()} />}
 
       {!loading && !error && sessions.length === 0 && (
-        <div className="text-center py-20 bg-surface/40 border border-slate-800/80 rounded-2xl p-8">
-          <MessageSquare className="w-12 h-12 mx-auto text-slate-600 mb-3" />
-          <h3 className="text-base font-semibold text-slate-200">No sessions yet</h3>
-          <p className="text-sm text-slate-400 mt-1 max-w-sm mx-auto">
-            Start a live conversation to practise your English and see your transcripts here.
-          </p>
-          <button
-            onClick={onBackToCall}
-            className="mt-5 px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-sm font-medium shadow-lg shadow-blue-500/20 transition-all"
-          >
-            Start Practice Call
-          </button>
-        </div>
+        <EmptyState
+          icon={<MessageSquare className="h-5 w-5" />}
+          title="No sessions yet"
+          description="Start a live conversation to practise your English — your transcripts and reports will collect here."
+          action={
+            <button onClick={onBackToCall} className="btn-primary px-4 py-2.5">
+              Start a practice call
+            </button>
+          }
+        />
       )}
 
       {!loading && !error && sessions.length > 0 && (
-        <div className="space-y-3">
+        <div className="space-y-2.5 pb-6">
           {sessions.map((s) => (
             <div
               key={s.id}
-              className="p-4 rounded-xl bg-surface/60 border border-slate-800/80 hover:border-slate-700/80 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+              className="panel card-hover flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
             >
-              <div className="space-y-1">
-                <div className="flex items-center space-x-2">
-                  <span className="font-semibold text-slate-200 capitalize">
+              <div className="min-w-0 space-y-1.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-semibold capitalize text-slate-100">
                     {s.scenario ? s.scenario.replace('_', ' ') : 'Practice session'}
                   </span>
                   <span
-                    className={`text-[10px] px-2 py-0.5 rounded-full font-mono uppercase font-bold border ${
+                    className={cx(
+                      'rounded-full border px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider',
                       s.status === 'completed'
-                        ? 'bg-emerald-950/50 text-emerald-300 border-emerald-800/60'
-                        : s.status === 'active'
-                        ? 'bg-blue-950/50 text-blue-300 border-blue-800/60'
-                        : 'bg-amber-950/50 text-amber-300 border-amber-800/60'
-                    }`}
+                        ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
+                        : 'border-white/10 bg-white/[0.04] text-slate-400',
+                    )}
                   >
                     {s.status}
                   </span>
+                  {s.report_status === 'pending' && (
+                    <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-amber-300">
+                      report building
+                    </span>
+                  )}
+                  {s.report_status === 'failed' && (
+                    <span className="rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-rose-300">
+                      report failed
+                    </span>
+                  )}
                 </div>
-                <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
+                <div className="flex flex-wrap items-center gap-3 font-mono text-[10px] uppercase tracking-wider text-slate-500">
                   <span>{formatDate(s.started_at)}</span>
-                  <span>•</span>
-                  <span className="flex items-center space-x-1">
-                    <Clock className="w-3 h-3 text-slate-500" />
-                    <span>{formatDuration(s.duration_s)}</span>
+                  <span className="flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    {formatDuration(s.duration_s)}
                   </span>
-                  <span>•</span>
-                  <span className="flex items-center space-x-1">
-                    <MessageSquare className="w-3 h-3 text-slate-500" />
-                    <span>{s.turn_count} turns</span>
+                  <span className="flex items-center gap-1">
+                    <MessageSquare className="h-3 w-3" />
+                    {s.turn_count} turns
                   </span>
                 </div>
               </div>
 
-              <div className="flex items-center space-x-2">
+              <div className="flex flex-none items-center gap-2">
                 {s.report_status === 'ready' && s.overall_score !== null && s.overall_score !== undefined && (
                   <span
-                    className={`text-sm font-bold tabular-nums px-2 py-0.5 rounded-lg border ${
-                      s.overall_score >= 75
-                        ? 'text-emerald-300 bg-emerald-950/40 border-emerald-800/50'
-                        : s.overall_score >= 50
-                        ? 'text-amber-300 bg-amber-950/40 border-amber-800/50'
-                        : 'text-rose-300 bg-rose-950/40 border-rose-800/50'
-                    }`}
+                    className={cx(
+                      'rounded-lg border px-2 py-0.5 font-display text-lg leading-none tabular-nums',
+                      scoreChip(s.overall_score),
+                    )}
                     title="Overall report score"
                   >
                     {Math.round(s.overall_score)}
                   </span>
                 )}
-                <button
-                  onClick={() => onSelectSession(s.id)}
-                  className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 transition-colors border border-slate-700/60"
-                >
+                <button onClick={() => onSelectSession(s.id)} className="btn-ghost px-3 py-2">
                   Transcript
                 </button>
-                <button
-                  onClick={() => onOpenReport(s.id)}
-                  className="flex items-center space-x-1 px-3.5 py-1.5 rounded-lg bg-primary/15 hover:bg-primary/25 text-xs font-medium text-primary-glow transition-colors border border-primary/30"
-                >
-                  <Sparkles className="w-3 h-3" />
+                <button onClick={() => onOpenReport(s.id)} className="btn gap-1 border border-primary/30 bg-primary/[0.12] px-3 py-2 text-primary-glow hover:bg-primary/20">
+                  <Sparkles className="h-3 w-3" />
                   <span>
                     {s.report_status === 'ready'
                       ? 'Report'
                       : s.report_status === 'failed'
-                      ? 'Retry report'
-                      : 'Generate report'}
+                      ? 'Retry'
+                      : 'Generate'}
                   </span>
+                  <ArrowRight className="h-3 w-3" />
                 </button>
               </div>
             </div>
           ))}
         </div>
       )}
-    </div>
+    </Page>
   );
 };

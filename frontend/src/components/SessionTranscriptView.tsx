@@ -1,6 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, MessageSquare, AlertCircle, RefreshCw, User, Bot, Sparkles } from 'lucide-react';
+import { MessageSquare, Sparkles, User } from 'lucide-react';
 import { fetchSessionTranscript, SessionTranscriptResponse, describeApiError } from '../lib/api';
+import {
+  EmptyState,
+  ErrorNote,
+  Page,
+  PageHeader,
+  RefreshButton,
+  SkeletonLines,
+  cx,
+} from './ui';
 
 interface SessionTranscriptViewProps {
   sessionId: string;
@@ -52,114 +61,78 @@ export const SessionTranscriptView: React.FC<SessionTranscriptViewProps> = ({
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 sm:p-6 max-w-4xl mx-auto w-full flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6 flex-shrink-0">
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={onBack}
-            className="p-2 rounded-lg bg-surface border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white transition-colors"
-            title="Back to sessions list"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div>
-            <h2 className="text-xl font-bold text-white tracking-wide">
-              {data?.session.scenario ? data.session.scenario.replace('_', ' ') : 'Session Transcript'}
-            </h2>
-            {data && (
-              <p className="text-xs text-slate-400 mt-0.5">
-                {formatDate(data.session.started_at)} • {formatDuration(data.session.duration_s)} • {data.turns.length} turns
-              </p>
+    <Page className="flex flex-col">
+      <PageHeader
+        eyebrow={data ? `${formatDate(data.session.started_at)} · ${formatDuration(data.session.duration_s)} · ${data.turns.length} turns` : 'Transcript'}
+        title={data?.session.scenario ? data.session.scenario.replace('_', ' ') : 'Session transcript'}
+        description="Exactly what was said, in order."
+        onBack={onBack}
+        backLabel="Back to past sessions"
+        actions={
+          <>
+            {onOpenReport && (
+              <button onClick={() => onOpenReport(sessionId)} className="btn-primary px-3 py-2">
+                <Sparkles className="h-3.5 w-3.5" />
+                <span>View report</span>
+              </button>
             )}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {onOpenReport && (
-            <button
-              onClick={() => onOpenReport(sessionId)}
-              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-primary/15 hover:bg-primary/25 text-xs font-medium text-primary-glow border border-primary/30 transition-colors"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>View Report</span>
-            </button>
-          )}
-          <button
-            onClick={load}
-            disabled={loading}
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-surface border border-slate-800 hover:border-slate-700 text-xs text-slate-300 hover:text-white transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            <span>Refresh</span>
-          </button>
-        </div>
-      </div>
+            <RefreshButton onClick={() => void load()} loading={loading} />
+          </>
+        }
+      />
 
       {loading && (
-        <div className="flex flex-col items-center justify-center py-20 text-slate-400 space-y-3 flex-1">
-          <RefreshCw className="w-8 h-8 animate-spin text-primary" />
-          <p className="text-sm">Loading transcript...</p>
+        <div className="panel p-5">
+          <SkeletonLines rows={6} />
         </div>
       )}
 
-      {error && !loading && (
-        <div className="p-4 rounded-xl bg-red-950/40 border border-red-800/60 text-red-300 flex items-start space-x-3">
-          <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0 text-red-400" />
-          <div>
-            <p className="text-sm font-medium">{error}</p>
-            <button
-              onClick={load}
-              className="mt-2 text-xs text-red-200 underline hover:text-white"
-            >
-              Try again
-            </button>
-          </div>
-        </div>
-      )}
+      {error && !loading && <ErrorNote message={error} onRetry={() => void load()} />}
 
       {!loading && !error && data && data.turns.length === 0 && (
-        <div className="text-center py-20 bg-surface/40 border border-slate-800/80 rounded-2xl p-8 flex-1 flex flex-col items-center justify-center">
-          <MessageSquare className="w-12 h-12 text-slate-600 mb-3" />
-          <h3 className="text-base font-semibold text-slate-200">No transcript recorded</h3>
-          <p className="text-sm text-slate-400 mt-1 max-w-sm">
-            This session ended before any speech was transcribed.
-          </p>
-        </div>
+        <EmptyState
+          icon={<MessageSquare className="h-5 w-5" />}
+          title="No transcript recorded"
+          description="This session ended before any speech was transcribed."
+        />
       )}
 
       {!loading && !error && data && data.turns.length > 0 && (
-        <div className="space-y-4 pb-12 flex-1">
+        <div className="space-y-4 pb-8">
           {data.turns.map((turn) => {
             const isUser = turn.speaker === 'user';
             return (
               <div
                 key={turn.idx}
-                className={`flex items-start gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}
+                className={cx('flex items-start gap-2.5', isUser ? 'flex-row-reverse' : 'flex-row')}
               >
                 <div
-                  className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                  className={cx(
+                    'grid h-8 w-8 flex-none place-items-center rounded-xl border',
                     isUser
-                      ? 'bg-primary/20 text-primary border border-primary/30'
-                      : 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30'
-                  }`}
+                      ? 'border-primary/30 bg-primary/15 text-primary-glow'
+                      : 'border-cyan-400/20 bg-cyan-400/10 text-cyan-300',
+                  )}
                 >
-                  {isUser ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+                  {isUser ? <User className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
                 </div>
 
                 <div
-                  className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                  className={cx(
+                    'max-w-[82%] rounded-2xl border px-4 py-2.5 text-sm leading-relaxed',
                     isUser
-                      ? 'bg-blue-600/20 border border-blue-500/30 text-blue-50 rounded-tr-none'
-                      : 'bg-surface/80 border border-slate-800 text-slate-200 rounded-tl-none shadow-sm'
-                  }`}
+                      ? 'rounded-tr-sm border-primary/25 bg-primary/[0.12] text-slate-100'
+                      : 'rounded-tl-sm border-white/[0.07] bg-white/[0.04] text-slate-100',
+                  )}
                 >
-                  <div className="flex items-center justify-between gap-4 mb-1 text-[11px] font-mono text-slate-400">
-                    <span className="font-semibold text-slate-300">
+                  <div className="mb-1 flex items-center justify-between gap-4">
+                    <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-slate-400">
                       {isUser ? 'You' : 'Coach'}
                     </span>
                     {turn.started_at_ms !== null && (
-                      <span>{Math.round(turn.started_at_ms / 1000)}s</span>
+                      <span className="font-mono text-[9px] text-slate-500">
+                        {Math.round(turn.started_at_ms / 1000)}s
+                      </span>
                     )}
                   </div>
                   <p className="whitespace-pre-wrap">{turn.text}</p>
@@ -169,6 +142,6 @@ export const SessionTranscriptView: React.FC<SessionTranscriptViewProps> = ({
           })}
         </div>
       )}
-    </div>
+    </Page>
   );
 };

@@ -1,23 +1,25 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  BookOpen,
+  ChevronDown,
+  History,
+  Layers,
   Mic,
   MicOff,
   Monitor,
+  Power,
+  Radio,
+  Send,
+  Settings as SettingsIcon,
+  ShieldAlert,
+  ShieldCheck,
+  Target,
+  TrendingUp,
   Video,
   VideoOff,
-  Power,
-  Settings as SettingsIcon,
-  Send,
-  Radio,
-  Layers,
-  ShieldCheck,
-  ShieldAlert,
   Volume2,
   VolumeX,
-  History,
-  TrendingUp,
-  BookOpen,
-  Target,
+  Wrench,
 } from 'lucide-react';
 import { useLiveSession } from './audio/useLiveSession';
 import { useAuth } from './auth/AuthProvider';
@@ -34,6 +36,99 @@ import { WordBankView } from './components/WordBankView';
 import { UsageCard, UsagePill } from './components/UsageMeter';
 import { usePracticeUsage } from './lib/usePracticeUsage';
 import { fetchWordBank } from './lib/api';
+import { cx } from './components/ui';
+
+type NavItem = {
+  hash: string;
+  label: string;
+  icon: React.ReactNode;
+  isActive: (route: string) => boolean;
+};
+
+const NAV_ITEMS: NavItem[] = [
+  { hash: '#/', label: 'Practice', icon: <Radio className="h-4 w-4" />, isActive: (r) => !r.startsWith('#/sessions') && r !== '#/progress' && r !== '#/words' },
+  { hash: '#/sessions', label: 'Sessions', icon: <History className="h-4 w-4" />, isActive: (r) => r.startsWith('#/sessions') },
+  { hash: '#/progress', label: 'Progress', icon: <TrendingUp className="h-4 w-4" />, isActive: (r) => r === '#/progress' },
+  { hash: '#/words', label: 'Word bank', icon: <BookOpen className="h-4 w-4" />, isActive: (r) => r === '#/words' },
+];
+
+const DOCK_TONES = {
+  emerald: 'border-emerald-400/40 bg-emerald-400/15 text-emerald-300',
+  cyan: 'border-cyan-400/40 bg-cyan-400/15 text-cyan-300',
+  violet: 'border-primary/40 bg-primary/15 text-primary-glow',
+} as const;
+
+const Brand: React.FC<{ mini?: boolean }> = ({ mini = false }) => (
+  <div className="flex items-center gap-2.5">
+    <div className="grid h-9 w-9 flex-none place-items-center rounded-2xl bg-gradient-to-br from-primary to-accent-cyan text-white shadow-glow">
+      <Radio className="h-4 w-4" />
+    </div>
+    <div className="leading-none">
+      <p className={cx('font-display tracking-tight text-white', mini ? 'text-xl' : 'text-[1.35rem]')}>LivePrep</p>
+      {!mini && (
+        <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.16em] text-slate-500">
+          AI communication coach
+        </p>
+      )}
+    </div>
+  </div>
+);
+
+const SidebarLink: React.FC<{
+  active: boolean;
+  label: string;
+  icon: React.ReactNode;
+  badge?: number;
+  onClick: () => void;
+}> = ({ active, label, icon, badge, onClick }) => (
+  <button
+    onClick={onClick}
+    aria-current={active ? 'page' : undefined}
+    className={cx(
+      'group relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-medium transition-all duration-200',
+      active ? 'bg-white/[0.07] text-white' : 'text-slate-400 hover:bg-white/[0.04] hover:text-slate-100',
+    )}
+  >
+    {active && (
+      <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-primary" />
+    )}
+    <span className={cx('transition-colors', active ? 'text-primary-glow' : 'text-slate-500 group-hover:text-slate-300')}>
+      {icon}
+    </span>
+    <span className="flex-1 text-left">{label}</span>
+    {badge !== undefined && badge > 0 && (
+      <span className="rounded-full bg-primary/20 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-primary-glow">
+        {badge}
+      </span>
+    )}
+  </button>
+);
+
+const DockButton: React.FC<{
+  label: string;
+  active?: boolean;
+  tone?: keyof typeof DOCK_TONES;
+  disabled?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}> = ({ label, active = false, tone = 'violet', disabled = false, onClick, children }) => (
+  <button
+    onClick={onClick}
+    disabled={disabled}
+    aria-pressed={active}
+    aria-label={label}
+    title={label}
+    className={cx(
+      'grid h-11 w-11 place-items-center rounded-2xl border transition-all duration-200 active:scale-95',
+      active
+        ? DOCK_TONES[tone]
+        : 'border-white/10 bg-white/[0.04] text-slate-400 hover:bg-white/[0.08] hover:text-white',
+      disabled && 'cursor-not-allowed opacity-35 hover:bg-white/[0.04] hover:text-slate-400',
+    )}
+  >
+    {children}
+  </button>
+);
 
 export const App: React.FC = () => {
   const {
@@ -74,6 +169,7 @@ export const App: React.FC = () => {
   const [focus, setFocus] = useState<string>('');
   // Cards due in the word bank: shown as a badge so practice is one click away.
   const [dueCount, setDueCount] = useState<number>(0);
+  const [showTools, setShowTools] = useState<boolean>(false);
 
   // Listen to hash changes for simple routing without an external library
   useEffect(() => {
@@ -126,6 +222,10 @@ export const App: React.FC = () => {
     }
   };
 
+  const navigate = (hash: string) => {
+    window.location.hash = hash;
+  };
+
   // Determine current page
   const isSessionsList = route === '#/sessions';
   const isProgressView = route === '#/progress';
@@ -139,268 +239,108 @@ export const App: React.FC = () => {
     ? route.replace('#/sessions/', '').split('/')[0]
     : null;
 
+  const statusLabel =
+    status === 'connected'
+      ? 'Live call in progress'
+      : status === 'connecting'
+      ? 'Connecting to your coach'
+      : status === 'error'
+      ? 'Connection problem'
+      : 'Ready when you are';
+
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-background text-slate-100 font-sans selection:bg-primary/30">
-      {/* Top Navigation Bar */}
-      <header className="h-14 border-b border-slate-800/80 px-4 sm:px-6 flex items-center justify-between bg-surface/60 backdrop-blur-md z-20 flex-shrink-0">
-        <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/20">
-            <Radio className="w-4 h-4 animate-pulse" />
-          </div>
-          <div>
-            <div className="flex items-center space-x-2">
-              <h1 className="text-sm font-extrabold tracking-wider uppercase bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-cyan-400 to-purple-400">
-                LivePrep
-              </h1>
-              <span className="px-1.5 py-0.5 rounded bg-primary/20 text-primary-glow border border-primary/30 text-[10px] font-mono font-bold">
-                GEMINI 3.8 LIVE
-              </span>
-            </div>
-            <p className="text-[10px] font-mono text-slate-400 hidden sm:block">
-              Your AI English & Communication Coach
-            </p>
-          </div>
+    <div className="relative flex h-[100dvh] w-full overflow-hidden">
+      {/* Desktop sidebar */}
+      <aside className="hidden w-[248px] flex-none flex-col border-r border-white/[0.06] bg-black/20 px-3 py-4 backdrop-blur-xl lg:flex">
+        <div className="px-1.5">
+          <Brand />
         </div>
 
-        {/* Center Navigation Tabs */}
-        <nav className="hidden sm:flex items-center space-x-1 bg-slate-900/80 p-1 rounded-xl border border-slate-800 text-xs">
-          <button
-            onClick={() => {
-              window.location.hash = '#/';
-            }}
-            className={`px-3 py-1 rounded-lg font-medium transition-colors ${
-              !route.startsWith('#/sessions')
-                ? 'bg-primary text-white shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Practice Call
-          </button>
-          <button
-            onClick={() => {
-              window.location.hash = '#/sessions';
-            }}
-            className={`flex items-center space-x-1.5 px-3 py-1 rounded-lg font-medium transition-colors ${
-              route.startsWith('#/sessions')
-                ? 'bg-primary text-white shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <History className="w-3.5 h-3.5" />
-            <span>Past Sessions</span>
-          </button>
-          <button
-            onClick={() => {
-              window.location.hash = '#/progress';
-            }}
-            className={`flex items-center space-x-1.5 px-3 py-1 rounded-lg font-medium transition-colors ${
-              isProgressView
-                ? 'bg-primary text-white shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <TrendingUp className="w-3.5 h-3.5" />
-            <span>Progress</span>
-          </button>
-          <button
-            onClick={() => {
-              window.location.hash = '#/words';
-            }}
-            className={`flex items-center space-x-1.5 px-3 py-1 rounded-lg font-medium transition-colors ${
-              isWordBankView
-                ? 'bg-primary text-white shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <BookOpen className="w-3.5 h-3.5" />
-            <span>Word Bank</span>
-            {dueCount > 0 && (
-              <span className="px-1.5 rounded-full bg-cyan-500/20 border border-cyan-500/40 text-cyan-200 text-[9px] font-mono">
-                {dueCount}
-              </span>
-            )}
-          </button>
+        <nav className="mt-8 space-y-1" aria-label="Main">
+          <p className="eyebrow px-3 pb-2">Workspace</p>
+          {NAV_ITEMS.map((item) => (
+            <SidebarLink
+              key={item.hash}
+              active={item.isActive(route)}
+              label={item.label}
+              icon={item.icon}
+              badge={item.hash === '#/words' ? dueCount : undefined}
+              onClick={() => navigate(item.hash)}
+            />
+          ))}
         </nav>
 
-        <div className="flex items-center space-x-2 sm:space-x-3">
-          {/* Daily practice allowance: live countdown while a call is connected */}
-          <UsagePill
-            usage={practiceUsage.usage}
-            liveSeconds={practiceUsage.liveSeconds}
-            isLive={status === 'connected'}
-            loading={practiceUsage.loading}
-            error={practiceUsage.error}
-          />
-
-          {/* Main Quick Action Header Power Button (only shown in live view) */}
-          {!route.startsWith('#/sessions') && !isProgressView && !isWordBankView && (
-            <button
-              onClick={handleToggleConnect}
-              className={`flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl font-bold text-xs transition-all shadow-md ${
-                status === 'connected'
-                  ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-600/30'
-                  : 'bg-primary hover:bg-blue-600 text-white shadow-primary/30 animate-pulse'
-              }`}
-            >
-              <Power className="w-3.5 h-3.5" />
-              <span>{status === 'connected' ? 'End Call' : 'Start Live Call'}</span>
-            </button>
-          )}
-
-          {/* AI Voice Mute Toggle */}
-          <button
-            onClick={toggleAiMute}
-            className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-mono transition-colors ${
-              isAiMuted
-                ? 'bg-amber-500/10 border-amber-500/30 text-amber-400 hover:bg-amber-500/20'
-                : 'bg-slate-800/60 border-slate-700/60 text-slate-300 hover:text-white'
-            }`}
-            title={isAiMuted ? 'Unmute AI Voice' : 'Mute AI Voice'}
-          >
-            {isAiMuted ? <VolumeX className="w-4 h-4 text-amber-400" /> : <Volume2 className="w-4 h-4 text-slate-300" />}
-            <span className="hidden md:inline">{isAiMuted ? 'Muted' : 'Voice'}</span>
-          </button>
-
-          {/* Echo Shield Toggle */}
-          <button
-            onClick={toggleEchoShield}
-            className={`hidden lg:flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border text-xs font-mono transition-colors ${
-              echoShield
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
-                : 'bg-slate-800/60 border-slate-700/60 text-slate-400 hover:bg-slate-800'
-            }`}
-            title="Acoustic Echo Shield: Prevents laptop speakers from self-interrupting the agent."
-          >
-            {echoShield ? <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" /> : <ShieldAlert className="w-3.5 h-3.5 text-slate-400" />}
-            <span>Echo Shield: {echoShield ? 'ON' : 'OFF'}</span>
-          </button>
-
-          {/* Connection Status Badge */}
-          <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-slate-900 border border-slate-800 text-[11px] font-mono">
-            <span
-              className={`w-2 h-2 rounded-full ${
-                status === 'connected'
-                  ? 'bg-emerald-400 shadow-sm shadow-emerald-400'
-                  : status === 'connecting'
-                  ? 'bg-amber-400 animate-ping'
-                  : status === 'error'
-                  ? 'bg-rose-500'
-                  : 'bg-slate-500'
-              }`}
-            />
-            <span className="text-slate-300 capitalize">{status}</span>
+        <div className="mt-auto space-y-3">
+          <div className="panel px-3.5 py-3">
+            <div className="flex items-center justify-between">
+              <span className="eyebrow">Status</span>
+              <span className="flex items-center gap-1.5 font-mono text-[10px] capitalize text-slate-400">
+                <span
+                  className={cx(
+                    'h-1.5 w-1.5 rounded-full',
+                    status === 'connected'
+                      ? 'bg-emerald-400'
+                      : status === 'connecting'
+                      ? 'animate-pulse bg-amber-400'
+                      : status === 'error'
+                      ? 'bg-rose-500'
+                      : 'bg-slate-500',
+                  )}
+                />
+                {status}
+              </span>
+            </div>
+            <p className="mt-1.5 text-[11px] leading-snug text-slate-500">{statusLabel}</p>
           </div>
 
-          {/* Settings Button */}
           <button
             onClick={() => setIsSettingsOpen(true)}
-            className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/60 transition-colors"
-            title="Settings & Profile"
+            className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-white/[0.05]"
           >
-            <SettingsIcon className="w-4 h-4" />
+            <span className="grid h-8 w-8 flex-none place-items-center rounded-full border border-white/10 bg-white/[0.06] text-[11px] font-bold uppercase text-primary-glow">
+              {(email ?? '?').slice(0, 1)}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[11px] font-medium text-slate-300">
+                {email ?? 'Signed in'}
+              </span>
+              <span className="block text-[10px] text-slate-500">Account &amp; sign out</span>
+            </span>
+            <SettingsIcon className="h-3.5 w-3.5 flex-none text-slate-500" />
           </button>
         </div>
-      </header>
+      </aside>
 
-      {/* Post-Call Banner (if session recently ended and has a session_id) */}
-      {status === 'disconnected' && sessionId && route === '#/' && (
-        <div className="bg-primary/10 border-b border-primary/20 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs text-blue-200 z-10">
-          <span>Call ended. Your report is being prepared.</span>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                window.location.hash = `#/sessions/${sessionId}`;
-              }}
-              className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium border border-slate-700/60 transition-colors"
-            >
-              Transcript
-            </button>
-            <button
-              onClick={() => {
-                window.location.hash = `#/sessions/${sessionId}/report`;
-              }}
-              className="px-3 py-1 rounded-lg bg-primary hover:bg-primary-hover text-white font-semibold transition-colors shadow-sm"
-            >
-              View Report &rarr;
-            </button>
+      {/* Main column */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="z-20 flex h-16 flex-none items-center gap-3 border-b border-white/[0.06] bg-background/50 px-4 backdrop-blur-xl sm:px-6">
+          <div className="lg:hidden">
+            <Brand mini />
           </div>
-        </div>
-      )}
 
-      {/* Route Views */}
-      {isWordBankView ? (
-        <WordBankView
-          onBack={() => {
-            window.location.hash = '#/';
-          }}
-        />
-      ) : isProgressView ? (
-        <ProgressView
-          onBack={() => {
-            window.location.hash = '#/';
-          }}
-          onOpenReport={(id) => {
-            window.location.hash = `#/sessions/${id}/report`;
-          }}
-        />
-      ) : isSessionsList ? (
-        <SessionsList
-          onSelectSession={(id) => {
-            window.location.hash = `#/sessions/${id}`;
-          }}
-          onOpenReport={(id) => {
-            window.location.hash = `#/sessions/${id}/report`;
-          }}
-          onBackToCall={() => {
-            window.location.hash = '#/';
-          }}
-        />
-      ) : isReportView && reportSessionId ? (
-        <ReportView
-          sessionId={reportSessionId}
-          onBack={() => {
-            window.location.hash = '#/sessions';
-          }}
-          onOpenTranscript={(id) => {
-            window.location.hash = `#/sessions/${id}`;
-          }}
-          onOpenWordBank={() => {
-            window.location.hash = '#/words';
-          }}
-        />
-      ) : isTranscriptView && transcriptSessionId ? (
-        <SessionTranscriptView
-          sessionId={transcriptSessionId}
-          onBack={() => {
-            window.location.hash = '#/sessions';
-          }}
-          onOpenReport={(id) => {
-            window.location.hash = `#/sessions/${id}/report`;
-          }}
-        />
-      ) : (
-        /* Main Cockpit Workspace - Scrollable on small screens */
-        <main className="flex-1 flex flex-col lg:flex-row overflow-y-auto p-3 sm:p-4 gap-4 scrollbar-thin">
-          {/* Left Section: Voice Orb, Vision PiP, and Controls */}
-          <section className="flex-1 lg:max-w-[480px] flex flex-col rounded-3xl bg-surface/50 border border-slate-800/80 backdrop-blur-xl p-4 sm:p-5 relative justify-between shadow-2xl space-y-4">
-            {/* Status Message Header */}
-            <div className="flex items-center justify-between text-xs font-mono text-slate-400 z-10">
-              <span className="flex items-center space-x-2">
-                <Layers className="w-3.5 h-3.5 text-cyan-400" />
-                <span>{statusMessage}</span>
+          <div className="hidden min-w-0 items-center gap-2 lg:flex">
+            <span
+              className={cx(
+                'h-1.5 w-1.5 flex-none rounded-full',
+                status === 'connected'
+                  ? 'bg-emerald-400 shadow-[0_0_12px_2px_rgba(52,211,153,0.5)]'
+                  : status === 'connecting'
+                  ? 'animate-pulse bg-amber-400'
+                  : status === 'error'
+                  ? 'bg-rose-500'
+                  : 'bg-slate-500',
+              )}
+            />
+            <span className="truncate text-xs text-slate-400">{statusLabel}</span>
+            {isMicActive && (
+              <span className="chip ml-1 border-emerald-400/30 bg-emerald-400/10 text-emerald-300">
+                Mic live
               </span>
-              <div className="flex items-center space-x-2">
-                {isMicActive && (
-                  <span className="flex items-center space-x-1 text-emerald-400 text-[11px]">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>16kHz MIC</span>
-                  </span>
-                )}
-              </div>
-            </div>
+            )}
+          </div>
 
-            {/* Today's practice time: used / limit and the running call's timer */}
-            <UsageCard
+          <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
+            <UsagePill
               usage={practiceUsage.usage}
               liveSeconds={practiceUsage.liveSeconds}
               isLive={status === 'connected'}
@@ -408,151 +348,307 @@ export const App: React.FC = () => {
               error={practiceUsage.error}
             />
 
-            {/* Today's focus: folded into the coach's context when the call starts */}
+            <button
+              onClick={toggleAiMute}
+              aria-pressed={isAiMuted}
+              className={cx(
+                'grid h-9 w-9 place-items-center rounded-xl border transition-colors',
+                isAiMuted
+                  ? 'border-amber-400/30 bg-amber-400/10 text-amber-300'
+                  : 'border-white/10 bg-white/[0.04] text-slate-400 hover:text-white',
+              )}
+              title={isAiMuted ? 'Unmute coach voice' : 'Mute coach voice'}
+              aria-label={isAiMuted ? 'Unmute coach voice' : 'Mute coach voice'}
+            >
+              {isAiMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+            </button>
+
+            <button
+              onClick={toggleEchoShield}
+              aria-pressed={echoShield}
+              className={cx(
+                'hidden h-9 w-9 place-items-center rounded-xl border transition-colors xl:grid',
+                echoShield
+                  ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
+                  : 'border-white/10 bg-white/[0.04] text-slate-400 hover:text-white',
+              )}
+              title={`Echo shield ${echoShield ? 'on' : 'off'}: stops speakers interrupting the coach`}
+              aria-label="Toggle echo shield"
+            >
+              {echoShield ? <ShieldCheck className="h-4 w-4" /> : <ShieldAlert className="h-4 w-4" />}
+            </button>
+
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              className="grid h-9 w-9 place-items-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-400 transition-colors hover:text-white lg:hidden"
+              title="Settings & profile"
+              aria-label="Open settings"
+            >
+              <SettingsIcon className="h-4 w-4" />
+            </button>
+          </div>
+        </header>
+
+        {/* Post-call banner */}
+        {status === 'disconnected' && sessionId && route === '#/' && (
+          <div className="animate-fade-in mx-3 mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/25 bg-primary/10 px-4 py-2.5 text-xs text-primary-glow sm:mx-4">
+            <span className="flex items-center gap-2">
+              <span className="h-1.5 w-1.5 rounded-full bg-primary-glow" />
+              Call ended — your report is being prepared.
+            </span>
             <div className="flex items-center gap-2">
-              <Target className="w-3.5 h-3.5 text-cyan-400 flex-shrink-0" />
-              <input
-                type="text"
-                value={focus}
-                onChange={(e) => setFocus(e.target.value)}
-                maxLength={160}
-                disabled={status === 'connected'}
-                placeholder="Today's focus (optional): past tense, telling stories…"
-                title="Your coach starts from this goal and returns to it during the call."
-                className="w-full px-3 py-2 rounded-xl bg-slate-900/80 border border-slate-800 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-primary/60 disabled:opacity-50"
-              />
+              <button onClick={() => navigate(`#/sessions/${sessionId}`)} className="btn-ghost px-3 py-1.5">
+                Transcript
+              </button>
+              <button onClick={() => navigate(`#/sessions/${sessionId}/report`)} className="btn-primary px-3 py-1.5">
+                View report
+              </button>
             </div>
+          </div>
+        )}
 
-            {/* Center Stage: Voice Orb & PiP overlay */}
-            <div className="relative flex-1 flex flex-col items-center justify-center min-h-[220px]">
-              <VoiceOrb
-                state={agentState}
-                userVolume={userVolume}
-                agentVolume={agentVolume}
-              />
+        <main className="relative min-h-0 flex-1">
+          {isWordBankView ? (
+            <WordBankView onBack={() => navigate('#/')} />
+          ) : isProgressView ? (
+            <ProgressView onBack={() => navigate('#/')} onOpenReport={(id) => navigate(`#/sessions/${id}/report`)} />
+          ) : isSessionsList ? (
+            <SessionsList
+              onSelectSession={(id) => navigate(`#/sessions/${id}`)}
+              onOpenReport={(id) => navigate(`#/sessions/${id}/report`)}
+              onBackToCall={() => navigate('#/')}
+            />
+          ) : isReportView && reportSessionId ? (
+            <ReportView
+              sessionId={reportSessionId}
+              onBack={() => navigate('#/sessions')}
+              onOpenTranscript={(id) => navigate(`#/sessions/${id}`)}
+              onOpenWordBank={() => navigate('#/words')}
+            />
+          ) : isTranscriptView && transcriptSessionId ? (
+            <SessionTranscriptView
+              sessionId={transcriptSessionId}
+              onBack={() => navigate('#/sessions')}
+              onOpenReport={(id) => navigate(`#/sessions/${id}/report`)}
+            />
+          ) : (
+            /* Practice cockpit */
+            <div className="h-full overflow-y-auto">
+              <div className="mx-auto flex w-full max-w-6xl animate-fade-up flex-col gap-4 px-3 pb-28 pt-4 sm:px-4 lg:h-full lg:flex-row lg:overflow-hidden lg:pb-4">
+                {/* Session panel */}
+                <section className="panel-strong flex flex-col gap-3.5 p-4 sm:p-5 lg:w-[420px] lg:flex-none xl:w-[460px]">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="chip max-w-[70%] truncate normal-case tracking-normal text-slate-300">
+                      <Layers className="h-3 w-3 flex-none text-primary-glow" />
+                      <span className="truncate">{statusMessage}</span>
+                    </span>
+                    {isMicActive && (
+                      <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-emerald-300">
+                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+                        16 kHz
+                      </span>
+                    )}
+                  </div>
 
-              {/* Live Video Preview overlay */}
-              <div className="absolute top-0 right-0 max-w-[240px] z-10">
-                <ScreenPreview
-                  stream={videoStream}
-                  isActive={isScreenActive || isCameraActive}
-                  type={isScreenActive ? 'screen' : 'camera'}
-                  onStop={isScreenActive ? stopScreenShare : stopCamera}
-                  onSnapshot={captureSnapshot}
-                />
+                  <UsageCard
+                    usage={practiceUsage.usage}
+                    liveSeconds={practiceUsage.liveSeconds}
+                    isLive={status === 'connected'}
+                    loading={practiceUsage.loading}
+                    error={practiceUsage.error}
+                  />
+
+                  <div>
+                    <label htmlFor="focus" className="eyebrow mb-1.5 flex items-center gap-1.5">
+                      <Target className="h-3 w-3 text-cyan-400" />
+                      Today&apos;s focus
+                      <span className="font-sans text-[10px] normal-case tracking-normal text-slate-600">optional</span>
+                    </label>
+                    <input
+                      id="focus"
+                      type="text"
+                      value={focus}
+                      onChange={(e) => setFocus(e.target.value)}
+                      maxLength={160}
+                      disabled={status === 'connected'}
+                      placeholder="Past tense, telling stories, small talk…"
+                      title="Your coach starts from this goal and returns to it during the call."
+                      className="field text-xs disabled:opacity-50"
+                    />
+                  </div>
+
+                  <div className="relative flex min-h-[240px] flex-1 items-center justify-center overflow-hidden rounded-3xl border border-white/[0.05] bg-black/20">
+                    <div
+                      aria-hidden
+                      className="pointer-events-none absolute inset-0 animate-breathe"
+                      style={{
+                        background:
+                          'radial-gradient(circle at 50% 52%, rgba(124,108,255,0.22), transparent 62%)',
+                      }}
+                    />
+                    <VoiceOrb state={agentState} userVolume={userVolume} agentVolume={agentVolume} />
+                    <div className="absolute right-2.5 top-2.5 z-10 max-w-[220px]">
+                      <ScreenPreview
+                        stream={videoStream}
+                        isActive={isScreenActive || isCameraActive}
+                        type={isScreenActive ? 'screen' : 'camera'}
+                        onStop={isScreenActive ? stopScreenShare : stopCamera}
+                        onSnapshot={captureSnapshot}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-center gap-2">
+                      <button
+                        onClick={handleToggleConnect}
+                        className={cx(
+                          'btn h-11 gap-2 px-5 text-[13px] shadow-lg',
+                          status === 'connected'
+                            ? 'bg-rose-600 text-white shadow-rose-600/25 hover:bg-rose-500'
+                            : 'btn-primary',
+                        )}
+                      >
+                        <Power className="h-4 w-4" />
+                        <span>{status === 'connected' ? 'End call' : 'Start session'}</span>
+                      </button>
+
+                      <DockButton
+                        label={isMicActive ? 'Mute microphone' : 'Unmute microphone'}
+                        active={isMicActive}
+                        tone="emerald"
+                        disabled={status !== 'connected'}
+                        onClick={toggleMic}
+                      >
+                        {isMicActive ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+                      </DockButton>
+
+                      <DockButton
+                        label={isScreenActive ? 'Stop screen share' : 'Share your screen'}
+                        active={isScreenActive}
+                        tone="cyan"
+                        disabled={status !== 'connected'}
+                        onClick={isScreenActive ? stopScreenShare : startScreenShare}
+                      >
+                        <Monitor className="h-4 w-4" />
+                      </DockButton>
+
+                      <DockButton
+                        label={isCameraActive ? 'Stop camera' : 'Turn on camera'}
+                        active={isCameraActive}
+                        tone="violet"
+                        disabled={status !== 'connected'}
+                        onClick={isCameraActive ? stopCamera : startCamera}
+                      >
+                        {isCameraActive ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
+                      </DockButton>
+                    </div>
+
+                    <form onSubmit={handleSendText} className="relative">
+                      <input
+                        type="text"
+                        placeholder={
+                          status === 'connected'
+                            ? 'Type a message, or just speak…'
+                            : 'Start a session to talk with your coach'
+                        }
+                        value={inputPrompt}
+                        onChange={(e) => setInputPrompt(e.target.value)}
+                        disabled={status !== 'connected'}
+                        aria-label="Message to your coach"
+                        className="field pr-12 disabled:opacity-50"
+                      />
+                      <button
+                        type="submit"
+                        disabled={status !== 'connected' || !inputPrompt.trim()}
+                        aria-label="Send message"
+                        className="absolute right-1.5 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-xl bg-primary text-white transition-all hover:bg-primary-hover disabled:opacity-30"
+                      >
+                        <Send className="h-3.5 w-3.5" />
+                      </button>
+                    </form>
+                  </div>
+                </section>
+
+                {/* Transcript + tools */}
+                <section className="flex min-h-[440px] flex-1 flex-col gap-3">
+                  <div className="min-h-[280px] flex-1">
+                    <TranscriptView
+                      transcripts={transcripts}
+                      onSuggestedPromptClick={(prompt) => {
+                        if (status === 'connected') {
+                          sendTextMessage(prompt);
+                        } else {
+                          handleToggleConnect();
+                        }
+                      }}
+                    />
+                  </div>
+
+                  <div className="flex-none">
+                    <button
+                      onClick={() => setShowTools((value) => !value)}
+                      aria-expanded={showTools}
+                      className="flex w-full items-center justify-between rounded-2xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-2.5 transition-colors hover:border-white/10 hover:bg-white/[0.04]"
+                    >
+                      <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-slate-400">
+                        <Wrench className="h-3.5 w-3.5 text-emerald-400" />
+                        Coaching tools
+                        <span className="rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[9px] text-slate-400">
+                          {toolCalls.length}
+                        </span>
+                      </span>
+                      <ChevronDown
+                        className={cx('h-4 w-4 text-slate-500 transition-transform', showTools && 'rotate-180')}
+                      />
+                    </button>
+                    {showTools && (
+                      <div className="mt-2 h-52 animate-scale-in">
+                        <ToolActivityCard toolCalls={toolCalls} />
+                      </div>
+                    )}
+                  </div>
+                </section>
               </div>
             </div>
-
-            {/* Bottom Dock Control Bar */}
-            <div className="space-y-3 z-10 pt-2 border-t border-slate-800/60">
-              {/* Action Buttons */}
-              <div className="flex items-center justify-center space-x-2 sm:space-x-3">
-                {/* Power / Connect Button */}
-                <button
-                  onClick={handleToggleConnect}
-                  className={`flex items-center space-x-2 px-5 py-2.5 rounded-2xl font-semibold text-xs sm:text-sm transition-all shadow-lg ${
-                    status === 'connected'
-                      ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-600/30'
-                      : 'bg-primary hover:bg-blue-600 text-white shadow-primary/30'
-                  }`}
-                >
-                  <Power className="w-4 h-4" />
-                  <span>{status === 'connected' ? 'End Call' : 'Start Live Session'}</span>
-                </button>
-
-                {/* Mic Toggle */}
-                <button
-                  onClick={toggleMic}
-                  disabled={status !== 'connected'}
-                  className={`p-2.5 sm:p-3 rounded-2xl border transition-all ${
-                    isMicActive
-                      ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/30'
-                      : 'bg-slate-800/80 border-slate-700 text-slate-400 hover:text-white'
-                  } ${status !== 'connected' ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  title={isMicActive ? 'Mute Microphone' : 'Unmute Microphone'}
-                >
-                  {isMicActive ? <Mic className="w-4 h-4 sm:w-5 sm:h-5" /> : <MicOff className="w-4 h-4 sm:w-5 sm:h-5" />}
-                </button>
-
-                {/* Screen Share Toggle */}
-                <button
-                  onClick={isScreenActive ? stopScreenShare : startScreenShare}
-                  disabled={status !== 'connected'}
-                  className={`p-2.5 sm:p-3 rounded-2xl border transition-all ${
-                    isScreenActive
-                      ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400 hover:bg-cyan-500/30 shadow-lg shadow-cyan-500/20'
-                      : 'bg-slate-800/80 border-slate-700 text-slate-400 hover:text-white'
-                  } ${status !== 'connected' ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  title={isScreenActive ? 'Stop Screen Share' : 'Share Screen with Gemini'}
-                >
-                  <Monitor className="w-4 h-4 sm:w-5 sm:h-5" />
-                </button>
-
-                {/* Webcam Toggle */}
-                <button
-                  onClick={isCameraActive ? stopCamera : startCamera}
-                  disabled={status !== 'connected'}
-                  className={`p-2.5 sm:p-3 rounded-2xl border transition-all ${
-                    isCameraActive
-                      ? 'bg-purple-500/20 border-purple-500/50 text-purple-400 hover:bg-purple-500/30'
-                      : 'bg-slate-800/80 border-slate-700 text-slate-400 hover:text-white'
-                  } ${status !== 'connected' ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  title={isCameraActive ? 'Stop Webcam' : 'Turn on Webcam'}
-                >
-                  {isCameraActive ? <Video className="w-4 h-4 sm:w-5 sm:h-5" /> : <VideoOff className="w-4 h-4 sm:w-5 sm:h-5" />}
-                </button>
-              </div>
-
-              {/* Text Input / Quick injection */}
-              <form onSubmit={handleSendText} className="relative flex items-center">
-                <input
-                  type="text"
-                  placeholder={
-                    status === 'connected'
-                      ? 'Type message or speak into mic...'
-                      : 'Click "Start Live Call" above to begin...'
-                  }
-                  value={inputPrompt}
-                  onChange={(e) => setInputPrompt(e.target.value)}
-                  disabled={status !== 'connected'}
-                  className="w-full pl-4 pr-10 py-2.5 rounded-2xl bg-slate-900/80 border border-slate-800 text-xs sm:text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-primary/60 transition-colors disabled:opacity-50"
-                />
-                <button
-                  type="submit"
-                  disabled={status !== 'connected' || !inputPrompt.trim()}
-                  className="absolute right-1.5 p-1.5 rounded-xl bg-primary text-white hover:bg-blue-600 disabled:opacity-40 transition-opacity"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                </button>
-              </form>
-            </div>
-          </section>
-
-          {/* Right Section: Transcripts & Async Tool Activities (Persistent captions) */}
-          <section className="flex-1 flex flex-col gap-4 min-h-[400px]">
-            {/* Real-time Transcription Stream */}
-            <div className="flex-1 min-h-[260px] overflow-hidden">
-              <TranscriptView
-                transcripts={transcripts}
-                onSuggestedPromptClick={(prompt) => {
-                  if (status === 'connected') {
-                    sendTextMessage(prompt);
-                  } else {
-                    handleToggleConnect();
-                  }
-                }}
-              />
-            </div>
-
-            {/* Async Non-Blocking Tool Cards */}
-            <div className="h-56 sm:h-64 flex-shrink-0">
-              <ToolActivityCard toolCalls={toolCalls} />
-            </div>
-          </section>
+          )}
         </main>
-      )}
+      </div>
 
-      {/* Settings Modal */}
+      {/* Mobile bottom navigation */}
+      <nav
+        aria-label="Main"
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-white/[0.07] bg-background/90 backdrop-blur-xl lg:hidden"
+      >
+        <div className="grid grid-cols-4 px-1.5 pb-[env(safe-area-inset-bottom)]">
+          {NAV_ITEMS.map((item) => {
+            const active = item.isActive(route);
+            return (
+              <button
+                key={item.hash}
+                onClick={() => navigate(item.hash)}
+                aria-current={active ? 'page' : undefined}
+                className={cx(
+                  'relative flex flex-col items-center gap-1 py-2.5 text-[10px] font-medium transition-colors',
+                  active ? 'text-white' : 'text-slate-500',
+                )}
+              >
+                <span className={cx('transition-colors', active && 'text-primary-glow')}>{item.icon}</span>
+                <span className="flex items-center gap-1">
+                  {item.label}
+                  {item.hash === '#/words' && dueCount > 0 && (
+                    <span className="rounded-full bg-primary/25 px-1 font-mono text-[9px] text-primary-glow">
+                      {dueCount}
+                    </span>
+                  )}
+                </span>
+                {active && <span className="absolute inset-x-5 top-0 h-[2px] rounded-full bg-primary" />}
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
